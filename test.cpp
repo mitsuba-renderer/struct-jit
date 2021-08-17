@@ -1,7 +1,7 @@
 #include "impl/impl.h"
 #include "struct-jit.h"
 
-void put(FILE *f, impl i, uint32_t extra = (uint32_t) - 1, bool jump = false) {
+void put(FILE *f, impl i, uint32_t extra = (uint32_t) - 1, bool relative = false) {
     size_t offset = impl_offset[(uint16_t) i],
            size   = impl_offset[(uint16_t) i + 1] - offset;
 
@@ -17,7 +17,7 @@ void put(FILE *f, impl i, uint32_t extra = (uint32_t) - 1, bool jump = false) {
         for (ssize_t i = 0; i <= (ssize_t) size - 4; ++i) {
             if (dummy == *((uint32_t *) (data + i))) {
                 bool err = fwrite(data, i, 1, f) != 1;
-                if (jump)
+                if (relative)
                     extra = extra - ((uint32_t) ftell(f) + 4);
                 err |= fwrite(&extra, 4, 1, f) != 1;
                 if (size - i != 4)
@@ -44,8 +44,11 @@ int main(int args, char **argv) {
     put(f, impl::main_start);
 
     size_t loop_body = ftell(f);
-    put(f, impl::loadd_f32, 0);
-    put(f, impl::stored_f32, 0);
+    put(f, impl::load_f2, 8);
+    put(f, impl::max_f4, loop_body, true);
+    put(f, impl::min_f4, loop_body, true);
+    put(f, impl::round_f4);
+    put(f, impl::store_f4, 8);
 
     put(f, impl::main_inc_src, 4);
     put(f, impl::main_inc_dst, 4);
