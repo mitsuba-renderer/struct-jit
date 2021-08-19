@@ -1,2 +1,11 @@
-impl_x64_sysv.o
-impl_x64_win.o
+impl/impl_x64_sysv.o
+impl/impl_x64_win.o
+libstruct-jit.so
+
+*.ninja
+*.cmake
+CMakeFiles
+CMakeCache.txt
+.ninja_deps
+.ninja_log
+compile_commands.json
