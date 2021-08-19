@@ -5,17 +5,14 @@
 #define src    r8
 #define dst    r9
 
-#define idx    r10
-#define y      r11
-#define x      rbx
-#define tmp    rdi
+#define y      r10
+#define x      r11
+#define tmp    rbx
 
 #define cc_prefix \
-    push rbx; \
-    push rdi;
+    push rbx;
 
 #define cc_postfix \
-    pop rdi; \
     pop rbx;
 
 #include "impl_x64.S"

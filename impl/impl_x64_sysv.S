@@ -5,10 +5,9 @@
 #define src    rdx
 #define dst    rcx
 
-#define idx    r8
-#define y      r9
-#define x      r10
-#define tmp    r11
+#define y      r8
+#define x      r9
+#define tmp    r10
 
 #define cc_prefix
 #define cc_postfix

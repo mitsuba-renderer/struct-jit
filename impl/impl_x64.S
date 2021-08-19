@@ -24,11 +24,6 @@ main_prefix:
 main_prefix_end:
     .size main_prefix, main_prefix_end-main_prefix
 
-main_init_idx:
-    xor idx, idx
-main_init_idx_end:
-    .size main_init_idx, main_init_idx_end-main_init_idx
-
 main_start: # Outer loop start
     xor x, x
 main_start_end:
@@ -45,11 +40,6 @@ main_inc_dst:
     add dst, extra
 main_inc_dst_end:
     .size main_inc_dst, main_inc_dst_end-main_inc_dst
-
-main_inc_idx:
-    inc idx
-main_inc_idx_end:
-    .size main_inc_idx, main_inc_idx_end-main_inc_idx
 
 main_suffix_inner:
     inc x
@@ -110,58 +100,6 @@ load_f8:
 load_f8_end:
     .size load_f8, load_f8_end-load_f8
 
-; cvt_f4_f2:
-; cvt_f4_f2_end:
-;     .size cvt_f4_f2, cvt_f4_f2_end-cvt_f4_f2
-;
-;
-
-# ====> Load indirect
-
-loadi_u1:
-    mov tmp, qword ptr [src + extra]
-    mov al, byte ptr [tmp + idx]
-loadi_u1_end:
-    .size loadi_u1, loadi_u1_end-loadi_u1
-
-loadi_u2:
-    mov tmp, qword ptr [src + extra]
-    mov ax, word ptr [tmp + 2*idx]
-loadi_u2_end:
-    .size loadi_u2, loadi_u2_end-loadi_u2
-
-loadi_u4:
-    mov tmp, qword ptr [src + extra]
-    mov eax, dword ptr [tmp + 4*idx]
-loadi_u4_end:
-    .size loadi_u4, loadi_u4_end-loadi_u4
-
-loadi_u8:
-    mov tmp, qword ptr [src + extra]
-    mov rax, qword ptr [tmp + 8*idx]
-loadi_u8_end:
-    .size loadi_u8, loadi_u8_end-loadi_u8
-
-loadi_f2:
-    mov tmp, qword ptr [src + extra]
-    movzx eax, word ptr [tmp + 2*idx]
-    vmovd xmm0, eax
-    vcvtph2ps xmm0, xmm0
-loadi_f2_end:
-    .size loadi_f2, loadi_f2_end-loadi_f2
-
-loadi_f4:
-    mov tmp, qword ptr [src + extra]
-    vmovss xmm0, dword ptr [tmp + 4*idx]
-loadi_f4_end:
-    .size loadi_f4, loadi_f4_end-loadi_f4
-
-loadi_f8:
-    mov tmp, qword ptr [src + extra]
-    vmovsd xmm0, qword ptr [tmp + 8*idx]
-loadi_f8_end:
-    .size loadi_f8, loadi_f8_end-loadi_f8
-
 # ====> Store direct
 
 store_u1:
@@ -200,51 +138,6 @@ store_f8:
     vmovsd qword ptr [dst + extra], xmm0
 store_f8_end:
     .size store_f8, store_f8_end-store_f8
-
-# ====> Store indirect
-
-storei_u1:
-    mov tmp, qword ptr [dst + extra]
-    mov byte ptr [tmp + idx], al
-storei_u1_end:
-    .size storei_u1, storei_u1_end-storei_u1
-
-storei_u2:
-    mov tmp, qword ptr [dst + extra]
-    mov word ptr [tmp + 2*idx], ax
-storei_u2_end:
-    .size storei_u2, storei_u2_end-storei_u2
-
-storei_u4:
-    mov tmp, qword ptr [dst + extra]
-    mov dword ptr [tmp + 4*idx], eax
-storei_u4_end:
-    .size storei_u4, storei_u4_end-storei_u4
-storei_u8:
-    mov tmp, qword ptr [dst + extra]
-    mov qword ptr [tmp + 8*idx], rax
-storei_u8_end:
-    .size storei_u8, storei_u8_end-storei_u8
-
-storei_f2:
-    vcvtps2ph xmm0, xmm0, 0
-    vmovd eax, xmm0
-    mov tmp, qword ptr [dst + extra]
-    mov word ptr [tmp + 2*idx], ax
-storei_f2_end:
-    .size storei_f2, storei_f2_end-storei_f2
-
-storei_f4:
-    mov tmp, qword ptr [dst + extra]
-    vmovss dword ptr [tmp + 4*idx], xmm0
-storei_f4_end:
-    .size storei_f4, storei_f4_end-storei_f4
-
-storei_f8:
-    mov tmp, qword ptr [dst + extra]
-    vmovsd qword ptr [tmp + 8*idx], xmm0
-storei_f8_end:
-    .size storei_f8, storei_f8_end-storei_f8
 
 # ====> Endianness swap
 
