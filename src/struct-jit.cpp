@@ -1,9 +1,13 @@
-#include "struct-jit.h"
+#include <struct-jit/struct-jit.h>
 
-Struct::Struct(bool pack, Struct::ByteOrder byte_order)
+NAMESPACE_BEGIN(struct_jit)
+
+#if 0
+
+Struct::Struct(bool pack, ByteOrder byte_order)
     : Object(), m_pack(pack), m_byte_order(byte_order) {
-    if (m_byte_order == Struct::ByteOrder::HostByteOrder)
-        m_byte_order = host_byte_order();
+    if (m_byte_order == ByteOrder::HostByteOrder)
+        m_byte_order = ByteOrder::LittleEndian;
 }
 
 Struct::Struct(const Struct &s)
@@ -13,11 +17,11 @@ Struct::Struct(const Struct &s)
 size_t Struct::size() const {
     if (m_fields.empty())
         return 0;
-    auto const &last = m_fields[m_fields.size() - 1];
+    const Field &last = m_fields[m_fields.size() - 1];
     size_t size = last.offset + last.size;
     if (!m_pack) {
         size_t align = alignment();
-        size += math::modulo(align - size, align);
+        size = (size + align - 1) / align * align;
     }
     return size;
 }
@@ -26,7 +30,7 @@ size_t Struct::alignment() const {
     if (m_pack)
         return 1;
     size_t size = 1;
-    for (auto const &field : m_fields)
+    for (const Field &field : m_fields)
         size = std::max(size, field.size);
     return size;
 }
@@ -47,7 +51,7 @@ Struct &Struct::append(const std::string &name, Struct::Type type, uint32_t flag
     if (m_fields.empty()) {
         f.offset = 0;
     } else {
-        auto const &last = m_fields[m_fields.size() - 1];
+        const Field &last = m_fields[m_fields.size() - 1];
         f.offset = last.offset + last.size;
     }
     switch (type) {
@@ -62,10 +66,10 @@ Struct &Struct::append(const std::string &name, Struct::Type type, uint32_t flag
         case Type::Int64:
         case Type::UInt64:
         case Type::Float64: f.size = 8; break;
-        default: Throw("Struct::append(): invalid field type!");
+        default: throw std::runtime_error("Struct::append(): invalid field type!");
     }
     if (!m_pack)
-        f.offset += math::modulo(f.size - f.offset, f.size);
+        f.offset = (f.offset + f.size - 1) / f.size * f.size;
     m_fields.push_back(f);
     return *this;
 }
@@ -84,7 +88,7 @@ std::ostream &operator<<(std::ostream &os, Struct::Type value) {
         case Struct::Type::Float32: os << "float32"; break;
         case Struct::Type::Float64: os << "float64"; break;
         case Struct::Type::Invalid: os << "invalid"; break;
-        default: Throw("Struct: operator<<: invalid field type!");
+        default: throw std::runtime_error("Struct: operator<<: invalid field type!");
     }
     return os;
 }
@@ -140,14 +144,14 @@ const Struct::Field &Struct::field(const std::string &name) const {
     for (auto const &field : m_fields)
         if (field.name == name)
             return field;
-    Throw("Unable to find field \"%s\"", name);
+    throw std::runtime_error("Struct::field(): unable to find entry \"" + name + "\"");
 }
 
 Struct::Field &Struct::field(const std::string &name) {
     for (auto &field : m_fields)
         if (field.name == name)
             return field;
-    Throw("Unable to find field \"%s\"", name);
+    throw std::runtime_error("Struct::field(): unable to find entry \"" + name + "\"");
 }
 
 std::pair<double, double> Struct::range(Struct::Type type) {
@@ -179,14 +183,14 @@ std::pair<double, double> Struct::range(Struct::Type type) {
             Throw("Internal error: invalid field type");
     }
 
-    if (is_integer(type)) {
+    // if (is_integer(type)) {
         // Account for rounding errors in the conversions above.
         // (we want the bounds to be conservative)
-        if (result.first != 0)
-            result.first = ek::next_float(result.first);
-        result.second = ek::prev_float(result.second);
-    }
-
+    //     if (result.first != 0)
+    //         result.first = std::nextafter(result.first, std::numeric_limits<double>::infinity());
+    //     result.second = std::nextafter(result.first, std::numeric_limits<double>::infinity());
+    // }
+    //
     return result;
 }
 
@@ -204,3 +208,6 @@ size_t hash(const Struct &s) {
     return hash_combine(hash_combine(hash(s.m_fields), hash(s.m_pack)),
                         hash(s.m_byte_order));
 }
+#endif
+
+NAMESPACE_END(struct_jit)

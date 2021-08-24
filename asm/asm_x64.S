@@ -57,6 +57,7 @@ main_suffix_outer_end:
 
 main_postfix:
     cc_postfix
+    mov eax, 1
     ret
 main_postfix_end:
     .size main_postfix, main_postfix_end-main_postfix
@@ -392,15 +393,25 @@ round_f8_end:
 
 weight_recip_f4:
     mov tmp, 0x3f800000 # 1.0
-    vmovd xmm1, tmp
-    vdivss xmm2, xmm1, xmm0
+    vmovd xmm2, tmp
+    vxorps xmm1, xmm1, xmm1
+    vucomiss xmm0, xmm1
+    jp weight_recip_f4_div # weight == NaN (propagate)
+    je weight_recip_f4_end # weight == 0 (skip division)
+weight_recip_f4_div:
+    vdivss xmm2, xmm2, xmm0
 weight_recip_f4_end:
     .size weight_recip_f4, weight_recip_f4_end-weight_recip_f4
 
 weight_recip_f8:
     mov tmp, 0x3ff0000000000000 # 1.0
-    vmovq xmm1, tmp
-    vdivsd xmm2, xmm1, xmm0
+    vmovq xmm2, tmp
+    vxorpd xmm1, xmm1, xmm1
+    vucomisd xmm0, xmm1
+    jp weight_recip_f8_div # weight == NaN (propagate)
+    je weight_recip_f8_end # weight == 0 (skip division)
+weight_recip_f8_div:
+    vdivsd xmm2, xmm2, xmm0
 weight_recip_f8_end:
     .size weight_recip_f8, weight_recip_f8_end-weight_recip_f8
 

@@ -1,7 +1,7 @@
 #include "fwd.h"
 #include <string>
 
-NAMESPACE_BEGIN(sjit)
+NAMESPACE_BEGIN(struct_jit)
 
 class Struct {
     /// Type of a field in the \c Struct
@@ -34,19 +34,19 @@ class Struct {
          * Specifies whether the field encodes a sRGB gamma-corrected value.
          * Assumes \c Normalized is also specified.
          */
-        Gamma      = 0x02,
+        Gamma = 0x02,
 
         /**
          * In \ref FieldConverter::convert, check that the field value matches
          * the specified default value. Otherwise, return a failure
          */
-        Assert     = 0x04,
+        Assert = 0x04,
 
         /**
          * In \ref FieldConverter::convert, when the field is missing in the
          * source record, replace it by the specified default value
          */
-        Default    = 0x08,
+        Default = 0x08,
 
         /**
          * In \ref FieldConverter::convert, when an input structure contains a
@@ -54,7 +54,7 @@ class Struct {
          * expressed relative to its value. Converting to an un-weighted
          * structure entails a division by the weight.
          */
-        Weight     = 0x10,
+        Weight = 0x10,
 
         /**
          * Specifies whether the field encodes a color value with premultiplied
@@ -66,12 +66,12 @@ class Struct {
         /**
          * Specifies whether the field encodes an alpha value
         */
-        Alpha      = 0x40
+        Alpha = 0x40
     };
 
     /// Byte order of the fields in the \c Struct
     enum class ByteOrder {
-        Default,
+        HostByteOrder,
         LittleEndian,
         BigEndian
     };
@@ -86,4 +86,4 @@ class Struct {
 
 };
 
-NAMESPACE_END(sjit)
+NAMESPACE_END(struct_jit)
