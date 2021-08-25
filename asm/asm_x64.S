@@ -396,9 +396,9 @@ weight_recip_f4:
     vmovd xmm2, tmp
     vxorps xmm1, xmm1, xmm1
     vucomiss xmm0, xmm1
-    jp weight_recip_f4_div # weight == NaN (propagate)
+    jp weight_recip_f4_tmp # weight == NaN (propagate)
     je weight_recip_f4_end # weight == 0 (skip division)
-weight_recip_f4_div:
+weight_recip_f4_tmp:
     vdivss xmm2, xmm2, xmm0
 weight_recip_f4_end:
     .size weight_recip_f4, weight_recip_f4_end-weight_recip_f4
@@ -408,9 +408,9 @@ weight_recip_f8:
     vmovq xmm2, tmp
     vxorpd xmm1, xmm1, xmm1
     vucomisd xmm0, xmm1
-    jp weight_recip_f8_div # weight == NaN (propagate)
+    jp weight_recip_f8_tmp # weight == NaN (propagate)
     je weight_recip_f8_end # weight == 0 (skip division)
-weight_recip_f8_div:
+weight_recip_f8_tmp:
     vdivsd xmm2, xmm2, xmm0
 weight_recip_f8_end:
     .size weight_recip_f8, weight_recip_f8_end-weight_recip_f8

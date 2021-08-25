@@ -1,6 +1,7 @@
-impl/impl_x64_sysv.o
-impl/impl_x64_win.o
+asm/asm_x64_sysv.o
+asm/asm_x64_win.o
 libstruct-jit.so
+struct_jit_ext.cpython*
 
 *.ninja
 *.cmake
@@ -9,3 +10,5 @@ CMakeCache.txt
 .ninja_deps
 .ninja_log
 compile_commands.json
+
+__pycache__
