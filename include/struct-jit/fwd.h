@@ -6,11 +6,13 @@
 #  define NAMESPACE_END(name) }
 #endif
 
+#include <stdint.h>
+
 NAMESPACE_BEGIN(struct_jit)
 
-enum class ByteOrder;
-enum class Type;
-enum class Flag;
+enum class ByteOrder : uint32_t;
+enum class Type : uint32_t;
+enum class Flag : uint32_t;
 struct Field;
 
 NAMESPACE_END(struct_jit)

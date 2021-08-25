@@ -18,7 +18,7 @@ NAMESPACE_BEGIN(struct_jit)
 // --------------------------------------------------------------------------
 
 /// Byte order of the fields in the \c Struct
-enum class ByteOrder {
+enum class ByteOrder : uint32_t {
     Native,
     LittleEndian,
     BigEndian
@@ -27,7 +27,7 @@ enum class ByteOrder {
 // --------------------------------------------------------------------------
 
 /// List of field types supported by Struct-JIT
-enum class Type {
+enum class Type : uint32_t {
     Invalid,
 
     // Signed and unsigned integer values
@@ -40,10 +40,22 @@ enum class Type {
     Float16, Float32, Float64
 };
 
+/// Check whether the given type is a signed integer
+extern SJIT_EXPORT bool is_signed_int(Type type);
+
+/// Check whether the given type is an unsigned integer
+extern SJIT_EXPORT bool is_unsigned_int(Type type);
+
+/// Check whether the given type is a floating point type
+extern SJIT_EXPORT bool is_float(Type type);
+
+/// Return the size in bytes of the given variable type
+extern SJIT_EXPORT size_t size(Type type);
+
 // --------------------------------------------------------------------------
 
 /// Optional flags that can be applied to each field
-enum class Flag {
+enum class Flag : uint32_t {
     /**
      * The integral field encodes a quantized value in the range [0, 1].
      * Ignored on fields with a floating point type.
@@ -78,13 +90,13 @@ enum class Flag {
     Weight = 16
 };
 
-constexpr uint32_t operator |(Flag f1, Flag f2) { return (uint32_t) f1 | (uint32_t) f2; }
-constexpr uint32_t operator |(uint32_t f1, Flag f2)      { return f1 | (uint32_t) f2; }
-constexpr uint32_t operator &(Flag f1, Flag f2) { return (uint32_t) f1 & (uint32_t) f2; }
-constexpr uint32_t operator &(uint32_t f1, Flag f2)      { return f1 & (uint32_t) f2; }
-constexpr uint32_t operator ~(Flag f1)                   { return ~(uint32_t) f1; }
-constexpr uint32_t operator +(Flag e)                    { return (uint32_t) e; }
-constexpr bool has_flag(uint32_t flags, Flag f)          { return (flags & (uint32_t) f) != 0; }
+constexpr uint32_t operator |(Flag f1, Flag f2)     { return (uint32_t) f1 | (uint32_t) f2; }
+constexpr uint32_t operator |(uint32_t f1, Flag f2) { return f1 | (uint32_t) f2; }
+constexpr uint32_t operator &(Flag f1, Flag f2)     { return (uint32_t) f1 & (uint32_t) f2; }
+constexpr uint32_t operator &(uint32_t f1, Flag f2) { return f1 & (uint32_t) f2; }
+constexpr uint32_t operator ~(Flag f1)              { return ~(uint32_t) f1; }
+constexpr uint32_t operator +(Flag e)               { return (uint32_t) e; }
+constexpr bool has_flag(uint32_t flags, Flag f)     { return (flags & (uint32_t) f) != 0; }
 
 // --------------------------------------------------------------------------
 
@@ -96,11 +108,8 @@ struct SJIT_EXPORT Field {
     /// Type identifier
     Type type = Type::Invalid;
 
-    /// Size in bytes
-    uint32_t size = 0;
-
     /// Offset within the \c Struct (in bytes)
-    uint32_t offset = 0;
+    size_t offset = 0;
 
     /// Additional flags
     uint32_t flags = 0;
@@ -115,6 +124,9 @@ struct SJIT_EXPORT Field {
 
 class SJIT_EXPORT Struct {
 public:
+    using FieldIterator      = std::vector<Field>::iterator;
+    using FieldConstIterator = std::vector<Field>::const_iterator;
+
     /**
      * \brief Create an empty data structure
      *
@@ -139,6 +151,9 @@ public:
                    Type type,
                    uint32_t flags = 0,
                    double default_value = 0.0);
+
+    /// Append a new field to the \c Struct (manual version)
+    Struct &append(const Field &field);
 
     /// Return the byte order of the \c Struct
     ByteOrder byte_order() const { return m_byte_order; }
@@ -169,6 +184,19 @@ public:
 
     /// Look up a field by name. Throws an exception if not found
     Field &field(const std::string &name);
+
+    /// Return an iterator associated with the first field
+    FieldConstIterator begin() const { return m_fields.cbegin(); }
+
+    /// Return an iterator associated with the first field
+    FieldIterator begin() { return m_fields.begin(); }
+
+    /// Return an iterator associated with the end of the data structure
+    FieldConstIterator end() const { return m_fields.cend(); }
+
+    /// Return an iterator associated with the end of the data structure
+    FieldIterator end() { return m_fields.end(); }
+
 private:
     bool m_pack;
     ByteOrder m_byte_order;

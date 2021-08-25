@@ -14,7 +14,7 @@ size_t Struct::align() const {
         return 1;
     size_t size = 1;
     for (const Field &field : m_fields)
-        size = std::max(size, (size_t) field.size);
+        size = std::max(size, (size_t) struct_jit::size(field.type));
     return size;
 }
 
@@ -22,7 +22,7 @@ size_t Struct::size() const {
     if (m_fields.empty())
         return 0;
     const Field &last = m_fields[m_fields.size() - 1];
-    size_t size = (size_t) (last.offset + last.size);
+    size_t size = last.offset + struct_jit::size(last.type);
     if (!m_pack) {
         size_t a = align();
         size = (size + a - 1) / a * a;
@@ -31,37 +31,27 @@ size_t Struct::size() const {
 }
 
 Struct &Struct::append(const std::string &name, Type type, uint32_t flags, double default_value) {
-    Field f { name, type, 0, 0, flags, default_value };
+    Field f { name, type, 0, flags, default_value };
 
     if (has_field(name))
         throw std::runtime_error("Struct::append(): a field with this name already exists!");
 
-    if (m_fields.empty()) {
-        f.offset = 0;
-    } else {
+    if (!m_fields.empty()) {
         const Field &l = m_fields.back();
-        f.offset = l.offset + l.size;
+        f.offset = l.offset + struct_jit::size(l.type);
     }
 
-    switch (type) {
-        case Type::Int8:
-        case Type::UInt8:   f.size = 1; break;
-        case Type::Int16:
-        case Type::UInt16:
-        case Type::Float16: f.size = 2; break;
-        case Type::Int32:
-        case Type::UInt32:
-        case Type::Float32: f.size = 4; break;
-        case Type::Int64:
-        case Type::UInt64:
-        case Type::Float64: f.size = 8; break;
-        default: throw std::runtime_error("Struct::append(): invalid field type!");
+    if (!m_pack) {
+        size_t align = struct_jit::size(f.type);
+        f.offset = (f.offset + align - 1) / align * align;
     }
-
-    if (!m_pack)
-        f.offset = (f.offset + f.size - 1) / f.size * f.size;
 
     m_fields.push_back(f);
+    return *this;
+}
+
+Struct &Struct::append(const Field &field) {
+    m_fields.push_back(field);
     return *this;
 }
 
@@ -92,7 +82,7 @@ std::ostream &operator<<(std::ostream &os, const Struct &v) {
         const Field &f = v[i];
         os << "  " << f << std::endl;
 
-        size_t p0  = f.offset + f.size,
+        size_t p0  = f.offset + struct_jit::size(f.type),
                p1  = i + 1 < v.field_count() ? v[i + 1].offset : v.size(),
                pad = p1 - p0;
 
@@ -105,10 +95,43 @@ std::ostream &operator<<(std::ostream &os, const Struct &v) {
 
 // --------------------------------------------------------------------------
 
+bool is_signed_int(Type type) {
+    return type == Type::Int8  || type == Type::Int16 ||
+           type == Type::Int32 || type == Type::Int64;
+}
+
+bool is_unsigned_int(Type type) {
+    return type == Type::UInt8  || type == Type::UInt16 ||
+           type == Type::UInt32 || type == Type::UInt64;
+}
+
+bool is_float(Type type) {
+    return type == Type::Float16 || type == Type::Float32 || type == Type::Float64;
+}
+
+size_t size(Type type) {
+    switch (type) {
+        case Type::Int8:
+        case Type::UInt8:   return 1;
+        case Type::Int16:
+        case Type::UInt16:
+        case Type::Float16: return 2;
+        case Type::Int32:
+        case Type::UInt32:
+        case Type::Float32: return 4;
+        case Type::Int64:
+        case Type::UInt64:
+        case Type::Float64: return 8;
+        default:
+            throw std::runtime_error("size(): invalid field type!");
+    }
+}
+
+// --------------------------------------------------------------------------
+
 bool operator==(const Field &f1, const Field &f2) {
     return f1.name == f2.name &&
            f1.type == f2.type &&
-           f1.size == f2.size &&
            f1.offset == f2.offset &&
            f1.flags == f2.flags &&
            f1.default_value == f2.default_value;
@@ -193,6 +216,5 @@ std::ostream &operator<<(std::ostream &os, const Field &v) {
     return os;
 }
 
-// --------------------------------------------------------------------------
 
 NAMESPACE_END(struct_jit)
