@@ -1,18 +1,34 @@
 #include "fwd.h"
 #include <string>
+#include <iosfwd>
+#include <vector>
+
+#if defined(_MSC_VER)
+#  if defined(SJIT_BUILD)
+#    define SJIT_EXPORT    __declspec(dllexport)
+#  else
+#    define SJIT_EXPORT    __declspec(dllimport)
+#  endif
+#else
+#  define SJIT_EXPORT    __attribute__ ((visibility("default")))
+#endif
 
 NAMESPACE_BEGIN(struct_jit)
 
+// --------------------------------------------------------------------------
+
 /// Byte order of the fields in the \c Struct
 enum class ByteOrder {
-    HostByteOrder,
+    Native,
     LittleEndian,
     BigEndian
 };
 
+// --------------------------------------------------------------------------
+
 /// List of field types supported by Struct-JIT
-enum class Type : uint32_t {
-    Invalid = 0,
+enum class Type {
+    Invalid,
 
     // Signed and unsigned integer values
     UInt8,  Int8,
@@ -24,9 +40,10 @@ enum class Type : uint32_t {
     Float16, Float32, Float64
 };
 
+// --------------------------------------------------------------------------
 
 /// Optional flags that can be applied to each field
-enum class Flag : uint32_t {
+enum class Flag {
     /**
      * The integral field encodes a quantized value in the range [0, 1].
      * Ignored on fields with a floating point type.
@@ -40,10 +57,10 @@ enum class Flag : uint32_t {
     Gamma = 2,
 
     /**
-     * When convertinhg, check that the field value matches the specified
+     * When converting, check that the field value matches the specified
      * default value. Otherwise, return a conversion failure.
      */
-    Assert = 4,
+    Check = 4,
 
     /**
      * When the field is missing in the source record, replace it by the
@@ -58,18 +75,7 @@ enum class Flag : uint32_t {
      * where the weight tracks the accumulated contribution of Monte Carlo
      * samples.
      */
-    Weight = 16,
-
-    /**
-     * The field encodes an alpha value
-    */
-    Alpha = 32,
-
-    /**
-     * The field encodes a color value with premultiplied alpha. In this case,
-     * another field with the 'Alpha' flag must be present.
-     */
-    PremultipliedAlpha = 64
+    Weight = 16
 };
 
 constexpr uint32_t operator |(Flag f1, Flag f2) { return (uint32_t) f1 | (uint32_t) f2; }
@@ -80,17 +86,108 @@ constexpr uint32_t operator ~(Flag f1)                   { return ~(uint32_t) f1
 constexpr uint32_t operator +(Flag e)                    { return (uint32_t) e; }
 constexpr bool has_flag(uint32_t flags, Flag f)          { return (flags & (uint32_t) f) != 0; }
 
-class Struct {
+// --------------------------------------------------------------------------
 
+/// Specifies a single field of a \ref Struct instance
+struct SJIT_EXPORT Field {
+    /// Name of the field
+    std::string name;
 
-    struct Field {
-        std::string name;
-        const void *ptr = nullptr;
-        Type type = Type::Invalid;
-        uint32_t flags = 0;
-        uint32_t offset = 0;
-    };
+    /// Type identifier
+    Type type = Type::Invalid;
+
+    /// Size in bytes
+    uint32_t size = 0;
+
+    /// Offset within the \c Struct (in bytes)
+    uint32_t offset = 0;
+
+    /// Additional flags
+    uint32_t flags = 0;
+
+    /// Default value
+    double default_value = 0;
 
 };
+
+
+// --------------------------------------------------------------------------
+
+class SJIT_EXPORT Struct {
+public:
+    /**
+     * \brief Create an empty data structure
+     *
+     * \param pack
+     *    If \c true, fields will be tightly packed without adding
+     *    alignment-related padding
+     *
+     * \param byte_order
+     *    Enables overriding the byte order of the data structure. If needed,
+     *    Struct-JIT will perform endianness conversion during conversions.
+     */
+    Struct(bool pack = false, ByteOrder byte_order = ByteOrder::Native);
+
+    /// Standard constructor/copy assignment/..
+    Struct(const Struct &s) = default;
+    Struct(Struct &&s) = default;
+    Struct &operator=(const Struct &s) = default;
+    Struct &operator=(Struct &&s) = default;
+
+    /// Append a new field to the \c Struct; determines size and offset automatically
+    Struct &append(const std::string &name,
+                   Type type,
+                   uint32_t flags = 0,
+                   double default_value = 0.0);
+
+    /// Return the byte order of the \c Struct
+    ByteOrder byte_order() const { return m_byte_order; }
+
+    /// Return whether or not the \c Struct is packed
+    bool pack() const { return m_pack; }
+
+    /// Return the size (in bytes) of the data structure, including padding
+    size_t size() const;
+
+    /// Return the alignment (in bytes) of the data structure
+    size_t align() const;
+
+    /// Return the number of fields
+    size_t field_count() const { return m_fields.size(); }
+
+    /// Access an individual field by index
+    const Field &operator[](size_t i) const { return m_fields[i]; }
+
+    /// Access an individual field by index
+    Field &operator[](size_t i) { return m_fields[i]; }
+
+    /// Check if the \c Struct has a field of the specified name
+    bool has_field(const std::string &name) const;
+
+    /// Look up a field by name (throws an exception if not found)
+    const Field &field(const std::string &name) const;
+
+    /// Look up a field by name. Throws an exception if not found
+    Field &field(const std::string &name);
+private:
+    bool m_pack;
+    ByteOrder m_byte_order;
+    std::vector<Field> m_fields;
+};
+
+// --------------------------------------------------------------------------
+
+extern SJIT_EXPORT bool operator==(const Struct &f1, const Struct &f2);
+extern SJIT_EXPORT bool operator!=(const Struct &f1, const Struct &f2);
+extern SJIT_EXPORT bool operator==(const Field &f1, const Field &f2);
+extern SJIT_EXPORT bool operator!=(const Field &f1, const Field &f2);
+
+// --------------------------------------------------------------------------
+
+extern SJIT_EXPORT std::ostream &operator<<(std::ostream &, const Type &);
+extern SJIT_EXPORT std::ostream &operator<<(std::ostream &, const ByteOrder &);
+extern SJIT_EXPORT std::ostream &operator<<(std::ostream &, const Flag &);
+extern SJIT_EXPORT std::ostream &operator<<(std::ostream &, const Field &);
+extern SJIT_EXPORT std::ostream &operator<<(std::ostream &, const Struct &);
 
 NAMESPACE_END(struct_jit)

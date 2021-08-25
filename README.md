@@ -45,7 +45,6 @@ Struct-JIT deals with
   precision floats).
 - <b>Endianness conversion</b>: supported on both input and output end.
 - <b>Gamma correction</b> (sRGB curve): can be applied or removed.
-- <b>Alpha</b>: supports conversion between premultiplied and non-premultiplied formats.
 - <b>Defaults</b>: can substitute missing values with specified defaults.
 - <b>Dithering</b>: can apply dithering to avoid banding artifacts when
   producing output with low bit depth (e.g. 8 bit).

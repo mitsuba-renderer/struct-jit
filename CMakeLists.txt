@@ -16,6 +16,7 @@ add_library(
   src/struct-jit.cpp
 )
 
+target_compile_definitions(struct-jit PRIVATE -DSJIT_BUILD=1)
 target_compile_features(struct-jit PRIVATE cxx_std_14)
 target_include_directories(struct-jit
   PUBLIC

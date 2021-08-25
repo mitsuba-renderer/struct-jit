@@ -6,6 +6,7 @@ pybind11_add_module(
 )
 
 target_link_libraries(struct-jit-python PRIVATE struct-jit)
+target_compile_features(struct-jit-python PRIVATE cxx_std_14)
 
 if (MSVC)
   set(SJIT_OUTPUT_DIRECTORY

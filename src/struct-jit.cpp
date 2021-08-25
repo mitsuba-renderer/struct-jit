@@ -1,59 +1,48 @@
 #include <struct-jit/struct-jit.h>
+#include <ostream>
 
 NAMESPACE_BEGIN(struct_jit)
 
-#if 0
-
 Struct::Struct(bool pack, ByteOrder byte_order)
-    : Object(), m_pack(pack), m_byte_order(byte_order) {
-    if (m_byte_order == ByteOrder::HostByteOrder)
+    : m_pack(pack), m_byte_order(byte_order) {
+    if (m_byte_order == ByteOrder::Native)
         m_byte_order = ByteOrder::LittleEndian;
 }
 
-Struct::Struct(const Struct &s)
-    : Object(), m_fields(s.m_fields), m_pack(s.m_pack),
-      m_byte_order(s.m_byte_order) { }
+size_t Struct::align() const {
+    if (m_pack)
+        return 1;
+    size_t size = 1;
+    for (const Field &field : m_fields)
+        size = std::max(size, (size_t) field.size);
+    return size;
+}
 
 size_t Struct::size() const {
     if (m_fields.empty())
         return 0;
     const Field &last = m_fields[m_fields.size() - 1];
-    size_t size = last.offset + last.size;
+    size_t size = (size_t) (last.offset + last.size);
     if (!m_pack) {
-        size_t align = alignment();
-        size = (size + align - 1) / align * align;
+        size_t a = align();
+        size = (size + a - 1) / a * a;
     }
     return size;
 }
 
-size_t Struct::alignment() const {
-    if (m_pack)
-        return 1;
-    size_t size = 1;
-    for (const Field &field : m_fields)
-        size = std::max(size, field.size);
-    return size;
-}
+Struct &Struct::append(const std::string &name, Type type, uint32_t flags, double default_value) {
+    Field f { name, type, 0, 0, flags, default_value };
 
-bool Struct::has_field(const std::string &name) const {
-    for (auto const &field : m_fields)
-        if (field.name == name)
-            return true;
-    return false;
-}
+    if (has_field(name))
+        throw std::runtime_error("Struct::append(): a field with this name already exists!");
 
-Struct &Struct::append(const std::string &name, Struct::Type type, uint32_t flags, double default_) {
-    Field f;
-    f.name = name;
-    f.type = type;
-    f.flags = flags;
-    f.default_ = default_;
     if (m_fields.empty()) {
         f.offset = 0;
     } else {
-        const Field &last = m_fields[m_fields.size() - 1];
-        f.offset = last.offset + last.size;
+        const Field &l = m_fields.back();
+        f.offset = l.offset + l.size;
     }
+
     switch (type) {
         case Type::Int8:
         case Type::UInt8:   f.size = 1; break;
@@ -68,146 +57,142 @@ Struct &Struct::append(const std::string &name, Struct::Type type, uint32_t flag
         case Type::Float64: f.size = 8; break;
         default: throw std::runtime_error("Struct::append(): invalid field type!");
     }
+
     if (!m_pack)
         f.offset = (f.offset + f.size - 1) / f.size * f.size;
+
     m_fields.push_back(f);
     return *this;
 }
 
-std::ostream &operator<<(std::ostream &os, Struct::Type value) {
-    switch (value) {
-        case Struct::Type::Int8:    os << "int8";    break;
-        case Struct::Type::UInt8:   os << "uint8";   break;
-        case Struct::Type::Int16:   os << "int16";   break;
-        case Struct::Type::UInt16:  os << "uint16";  break;
-        case Struct::Type::Int32:   os << "int32";   break;
-        case Struct::Type::UInt32:  os << "uint32";  break;
-        case Struct::Type::Int64:   os << "int64";   break;
-        case Struct::Type::UInt64:  os << "uint64";  break;
-        case Struct::Type::Float16: os << "float16"; break;
-        case Struct::Type::Float32: os << "float32"; break;
-        case Struct::Type::Float64: os << "float64"; break;
-        case Struct::Type::Invalid: os << "invalid"; break;
-        default: throw std::runtime_error("Struct: operator<<: invalid field type!");
-    }
-    return os;
+bool Struct::has_field(const std::string &name) const {
+    for (const Field &field : m_fields)
+        if (field.name == name)
+            return true;
+    return false;
 }
 
-std::string Struct::to_string() const {
-    std::ostringstream os;
-    os << "Struct<" << size() << ">[" << std::endl;
-    for (size_t i = 0; i < m_fields.size(); ++i) {
-        auto const &f = m_fields[i];
-        if (i > 0) {
-            size_t padding = f.offset - (m_fields[i-1].offset + m_fields[i-1].size);
-            if (padding > 0)
-                os << "  // " << padding << " byte" << (padding > 1 ? "s" : "") << " of padding." << std::endl;
-        }
-        os << "  " << f.type;
-        os << " " << f.name << "; // @" << f.offset;
-        if (has_flag(f.flags, Flags::Normalized))
-            os << ", normalized";
-        if (has_flag(f.flags, Flags::Gamma))
-            os << ", gamma";
-        if (has_flag(f.flags, Flags::Weight))
-            os << ", weight";
-        if (has_flag(f.flags, Flags::Alpha))
-            os << ", alpha";
-        if (has_flag(f.flags, Flags::PremultipliedAlpha))
-            os << ", premultiplied alpha";
-        if (has_flag(f.flags, Flags::Default))
-            os << ", default=" << f.default_;
-        if (has_flag(f.flags, Flags::Assert))
-            os << ", assert=" << f.default_;
-        if (!f.blend.empty()) {
-            os << ", blend = <";
-            for (size_t j = 0; j < f.blend.size(); ++j) {
-                os << f.blend[j].second << " * " << f.blend[j].first;
-                if (j + 1 < f.blend.size())
-                    os << " + ";
-            }
-            os << ">";
-        }
-        os << "\n";
-    }
-    if (!m_fields.empty()) {
-        size_t padding = size() - (m_fields[m_fields.size() - 1].offset +
-                                   m_fields[m_fields.size() - 1].size);
-        if (padding > 0)
-            os << "  // " << padding << " byte" << (padding > 1 ? "s" : "") << " of padding." << std::endl;
-    }
-    os << "]";
-    return os.str();
-}
-
-const Struct::Field &Struct::field(const std::string &name) const {
+const Field &Struct::field(const std::string &name) const {
     for (auto const &field : m_fields)
         if (field.name == name)
             return field;
     throw std::runtime_error("Struct::field(): unable to find entry \"" + name + "\"");
 }
 
-Struct::Field &Struct::field(const std::string &name) {
+Field &Struct::field(const std::string &name) {
     for (auto &field : m_fields)
         if (field.name == name)
             return field;
     throw std::runtime_error("Struct::field(): unable to find entry \"" + name + "\"");
 }
 
-std::pair<double, double> Struct::range(Struct::Type type) {
-    std::pair<double, double> result;
+std::ostream &operator<<(std::ostream &os, const Struct &v) {
+    os << "Struct[" << std::endl;
+    for (size_t i = 0; i < v.field_count(); ++i) {
+        const Field &f = v[i];
+        os << "  " << f << std::endl;
 
-    #define COMPUTE_RANGE(key, type)                                            \
-        case key:                                                               \
-            result = std::make_pair((double) std::numeric_limits<type>::min(),  \
-                                    (double) std::numeric_limits<type>::max()); \
-            break;
+        size_t p0  = f.offset + f.size,
+               p1  = i + 1 < v.field_count() ? v[i + 1].offset : v.size(),
+               pad = p1 - p0;
 
-    switch (type) {
-        COMPUTE_RANGE(Type::UInt8, uint8_t);
-        COMPUTE_RANGE(Type::Int8, int8_t);
-        COMPUTE_RANGE(Type::UInt16, uint16_t);
-        COMPUTE_RANGE(Type::Int16, int16_t);
-        COMPUTE_RANGE(Type::UInt32, uint32_t);
-        COMPUTE_RANGE(Type::Int32, int32_t);
-        COMPUTE_RANGE(Type::UInt64, uint64_t);
-        COMPUTE_RANGE(Type::Int64, int64_t);
-        COMPUTE_RANGE(Type::Float32, float);
-        COMPUTE_RANGE(Type::Float64, double);
+        if (pad > 0)
+            os << "  // " << pad << " byte" << (pad > 1 ? "s" : "") << " of padding" << std::endl;
+    }
+    os << "]";
+    return os;
+}
 
-        case Type::Float16:
-            result = std::make_pair(-65504, 65504);
-            break;
+// --------------------------------------------------------------------------
 
-        default:
-            Throw("Internal error: invalid field type");
+bool operator==(const Field &f1, const Field &f2) {
+    return f1.name == f2.name &&
+           f1.type == f2.type &&
+           f1.size == f2.size &&
+           f1.offset == f2.offset &&
+           f1.flags == f2.flags &&
+           f1.default_value == f2.default_value;
+}
+
+bool operator!=(const Field &f1, const Field &f2) {
+    return !operator==(f1, f2);
+}
+
+bool operator==(const Struct &s1, const Struct &s2) {
+    if (s1.pack() != s2.pack() ||
+        s1.byte_order() != s2.byte_order() ||
+        s1.field_count() != s2.field_count())
+        return false;
+
+    for (size_t i = 0; i < s1.field_count(); ++i) {
+        if (s1[i] != s2[i])
+            return false;
     }
 
-    // if (is_integer(type)) {
-        // Account for rounding errors in the conversions above.
-        // (we want the bounds to be conservative)
-    //     if (result.first != 0)
-    //         result.first = std::nextafter(result.first, std::numeric_limits<double>::infinity());
-    //     result.second = std::nextafter(result.first, std::numeric_limits<double>::infinity());
-    // }
-    //
-    return result;
+    return true;
 }
 
-size_t hash(const Struct::Field &f) {
-    size_t value = hash(f.name);
-    value = hash_combine(value, hash(f.type));
-    value = hash_combine(value, hash(f.size));
-    value = hash_combine(value, hash(f.offset));
-    value = hash_combine(value, hash(f.flags));
-    value = hash_combine(value, hash(f.default_));
-    return value;
+bool operator!=(const Struct &s1, const Struct &s2) {
+    return !operator==(s1, s2);
 }
 
-size_t hash(const Struct &s) {
-    return hash_combine(hash_combine(hash(s.m_fields), hash(s.m_pack)),
-                        hash(s.m_byte_order));
+// --------------------------------------------------------------------------
+
+std::ostream &operator<<(std::ostream &os, const ByteOrder &v) {
+    switch (v) {
+        case ByteOrder::Native:        os << "native";        break;
+        case ByteOrder::LittleEndian:  os << "little-endian"; break;
+        case ByteOrder::BigEndian:     os << "big-endian";    break;
+        default: throw std::runtime_error("operator<<(ByteOrder): invalid field type!");
+    }
+    return os;
 }
-#endif
+
+std::ostream &operator<<(std::ostream &os, const Type &v) {
+    switch (v) {
+        case Type::Invalid: os << "invalid"; break;
+        case Type::Int8:    os << "int8";    break;
+        case Type::UInt8:   os << "uint8";   break;
+        case Type::Int16:   os << "int16";   break;
+        case Type::UInt16:  os << "uint16";  break;
+        case Type::Int32:   os << "int32";   break;
+        case Type::UInt32:  os << "uint32";  break;
+        case Type::Int64:   os << "int64";   break;
+        case Type::UInt64:  os << "uint64";  break;
+        case Type::Float16: os << "float16"; break;
+        case Type::Float32: os << "float32"; break;
+        case Type::Float64: os << "float64"; break;
+        default: throw std::runtime_error("operator<<(Type): invalid field type!");
+    }
+    return os;
+}
+
+std::ostream &operator<<(std::ostream &os, const Flag &v) {
+    switch (v) {
+        case Flag::Normalized: os << "normalized"; break;
+        case Flag::Gamma:      os << "gamma";      break;
+        case Flag::Check:      os << "check";      break;
+        case Flag::Default:    os << "default";    break;
+        case Flag::Weight:     os << "weight";     break;
+        default: throw std::runtime_error("operator<<(Flag): invalid field type!");
+    }
+    return os;
+}
+
+std::ostream &operator<<(std::ostream &os, const Field &v) {
+    os << v.type << " " << v.name << "; // @" << v.offset;
+    for (Flag f : { Flag::Normalized, Flag::Gamma, Flag::Weight, Flag::Default, Flag::Check }) {
+       if (has_flag(v.flags, f))
+           os << ", " << f;
+    }
+
+    if (has_flag(v.flags, Flag::Default) ||
+        has_flag(v.flags, Flag::Check))
+        os << ", default_value=" << v.default_value;
+
+    return os;
+}
+
+// --------------------------------------------------------------------------
 
 NAMESPACE_END(struct_jit)
