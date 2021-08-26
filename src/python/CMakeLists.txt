@@ -34,3 +34,29 @@ if (SJIT_MASTER_PROJECT AND NOT "${CMAKE_CURRENT_SOURCE_DIR}" STREQUAL "${CMAKE_
     COPYONLY
   )
 endif()
+
+
+# ----------------------------------------------------------
+#   docstring target
+# ----------------------------------------------------------
+
+if (UNIX)
+  get_filename_component(MKDOC_PATH ${CMAKE_CURRENT_SOURCE_DIR}/../../include/struct-jit ABSOLUTE)
+  get_property(MKDOC_INCLUDE_DIRECTORIES DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY INCLUDE_DIRECTORIES)
+  get_property(MKDOC_COMPILE_DEFINITIONS DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY COMPILE_DEFINITIONS)
+
+  foreach (value ${MKDOC_INCLUDE_DIRECTORIES})
+    list(APPEND MKDOC_CXXFLAGS -I${value})
+  endforeach()
+
+  foreach (value ${MKDOC_COMPILE_DEFINITIONS})
+    list(APPEND MKDOC_CXXFLAGS -D${value})
+  endforeach()
+
+  add_custom_target(docstrings USES_TERMINAL COMMAND
+    ${Python_EXECUTABLE} -m pybind11_mkdoc -std=c++17 -stdlib=libc++ -ferror-limit=100000
+    ${MKDOC_CXXFLAGS}
+    `find ${MKDOC_PATH} -name '*.h' ! -name fwd.h -print`
+    -o ${CMAKE_CURRENT_SOURCE_DIR}/docstr.h
+  )
+endif()

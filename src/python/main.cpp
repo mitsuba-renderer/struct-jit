@@ -3,13 +3,15 @@
 #include <pybind11/numpy.h>
 #include <struct-jit/struct-jit.h>
 #include <sstream>
+#include "docstr.h"
+
+#define D(...) DOC(struct_jit, __VA_ARGS__)
+// #define D(...) ""
 
 using namespace pybind11::literals;
 
 namespace py = pybind11;
 namespace sj = struct_jit;
-
-#define D(...) ""
 
 sj::Type type_from_dtype(const py::dtype &dt) {
     if (dt.kind() == 'i') {
