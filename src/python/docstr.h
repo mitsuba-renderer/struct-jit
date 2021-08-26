@@ -126,7 +126,15 @@ static const char *__doc_struct_jit_Struct_operator_assign = R"doc()doc";
 
 static const char *__doc_struct_jit_Struct_operator_assign_2 = R"doc()doc";
 
-static const char *__doc_struct_jit_Struct_pack = R"doc(Return whether or not the ``Struct`` is packed)doc";
+static const char *__doc_struct_jit_Struct_pack =
+R"doc(Return whether entries appended to the ``Struct`` should be tightly
+packed?)doc";
+
+static const char *__doc_struct_jit_Struct_set_byte_order = R"doc(Specify the byte order of the ``Struct``)doc";
+
+static const char *__doc_struct_jit_Struct_set_pack =
+R"doc(Specify whether entries appended to the ``Struct`` should be tightly
+packed?)doc";
 
 static const char *__doc_struct_jit_Struct_size = R"doc(Return the size (in bytes) of the data structure, including padding)doc";
 

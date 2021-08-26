@@ -103,15 +103,30 @@ PYBIND11_MODULE(struct_jit_ext, m_) {
             if (fields.is_none())
                 throw py::type_error("struct_jit.Struct(): input is not a structured dtype!");
 
+            size_t size = 0,
+                   itemsize = py::cast<size_t>(dt.attr("itemsize"));
             sj::Struct s;
+            sj::ByteOrder byte_order = sj::ByteOrder::Native;
             for (py::handle key: fields) {
                 py::tuple value = fields[key];
+                py::dtype sub_dt = value[0];
+                py::handle byte_order_dt = sub_dt.attr("byteorder");
+
+                if (byte_order_dt.equal(py::str(">")))
+                    byte_order = sj::ByteOrder::BigEndian;
+                else if (byte_order_dt.equal(py::str("<")))
+                    byte_order = sj::ByteOrder::LittleEndian;
+
                 sj::Field f;
                 f.name = py::cast<std::string>(key);
-                f.type = type_from_dtype(value[0]);
+                f.type = type_from_dtype(sub_dt);
                 f.offset = py::cast<uint32_t>(value[1]);
                 s.append(f);
+                size += sj::size(f.type);
             }
+
+            s.set_pack(itemsize == size);
+            s.set_byte_order(byte_order);
 
             return s;
         }), "dtype"_a)
@@ -124,7 +139,9 @@ PYBIND11_MODULE(struct_jit_ext, m_) {
         .def("align", &sj::Struct::align, D(Struct, align))
         .def("size", &sj::Struct::size, D(Struct, size))
         .def("byte_order", &sj::Struct::byte_order, D(Struct, byte_order))
+        .def("set_byte_order", &sj::Struct::set_byte_order, D(Struct, set_byte_order))
         .def("pack", &sj::Struct::pack, D(Struct, pack))
+        .def("set_pack", &sj::Struct::set_pack, D(Struct, set_pack))
         .def("has_field", &sj::Struct::has_field, D(Struct, has_field))
         .def("field_count", &sj::Struct::field_count, D(Struct, field_count))
         .def("field", (sj::Field & (sj::Struct::*)(const std::string &)) &sj::Struct::field, D(Struct, field))

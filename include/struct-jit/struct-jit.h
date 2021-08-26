@@ -158,8 +158,14 @@ public:
     /// Return the byte order of the \c Struct
     ByteOrder byte_order() const { return m_byte_order; }
 
-    /// Return whether or not the \c Struct is packed
+    /// Specify the byte order of the \c Struct
+    void set_byte_order(ByteOrder value);
+
+    /// Return whether entries appended to the \c Struct should be tightly packed?
     bool pack() const { return m_pack; }
+
+    /// Specify whether entries appended to the \c Struct should be tightly packed?
+    void set_pack(bool value) { m_pack = value; }
 
     /// Return the size (in bytes) of the data structure, including padding
     size_t size() const;

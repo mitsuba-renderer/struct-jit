@@ -9,6 +9,12 @@ Struct::Struct(bool pack, ByteOrder byte_order)
         m_byte_order = ByteOrder::LittleEndian;
 }
 
+void Struct::set_byte_order(ByteOrder value) {
+    if (value == ByteOrder::Native)
+        value = ByteOrder::LittleEndian;
+    m_byte_order = value;
+}
+
 size_t Struct::align() const {
     if (m_pack)
         return 1;
