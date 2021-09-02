@@ -14,10 +14,11 @@ add_library(
   SHARED
   include/struct-jit/struct-jit.h
   src/struct-jit.cpp
+  src/convert.cpp
 )
 
 target_compile_definitions(struct-jit PRIVATE -DSJIT_BUILD=1)
-target_compile_features(struct-jit PRIVATE cxx_std_14)
+target_compile_features(struct-jit PRIVATE cxx_std_17)
 target_include_directories(struct-jit
   PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>

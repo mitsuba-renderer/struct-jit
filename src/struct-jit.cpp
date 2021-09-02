@@ -1,7 +1,14 @@
 #include <struct-jit/struct-jit.h>
+#include <algorithm>
 #include <ostream>
+#include <cstring>
+#include <stdexcept>
 
 NAMESPACE_BEGIN(struct_jit)
+
+[[noreturn]] static void raise(const std::string &msg) {
+    throw std::runtime_error(msg);
+}
 
 Struct::Struct(bool pack, ByteOrder byte_order)
     : m_pack(pack), m_byte_order(byte_order) {
@@ -36,11 +43,15 @@ size_t Struct::size() const {
     return size;
 }
 
-Struct &Struct::append(const std::string &name, Type type, uint32_t flags, double default_value) {
-    Field f { name, type, 0, flags, default_value };
+Struct &Struct::append(const std::string &name, Type type, uint32_t flags, const void *value) {
+    Field f { name, type, 0, flags, 0 };
+    memcpy(&f.value, value, struct_jit::size(type));
 
-    if (has_field(name))
-        throw std::runtime_error("Struct::append(): a field with this name already exists!");
+    if (name.empty())
+        raise("Struct::append(): a field name must be specified!");
+    else if (contains(name))
+        raise("Struct::append(): a field with the name \"" + name +
+              "\" already exists!");
 
     if (!m_fields.empty()) {
         const Field &l = m_fields.back();
@@ -57,39 +68,61 @@ Struct &Struct::append(const std::string &name, Type type, uint32_t flags, doubl
 }
 
 Struct &Struct::append(const Field &field) {
+    if (field.name.empty())
+        raise("Struct::append(): a field name must be specified!");
+    else if (contains(field.name))
+        raise("Struct::append(): a field with the name \"" + field.name +
+              "\" already exists!");
+
     m_fields.push_back(field);
     return *this;
 }
 
-bool Struct::has_field(const std::string &name) const {
+Struct::FieldIterator Struct::find(const std::string &name) {
+    return std::find_if(
+        m_fields.begin(),
+        m_fields.end(),
+        [&](const Field &f) { return f.name == name; }
+    );
+}
+
+Struct::ConstFieldIterator Struct::find(const std::string &name) const {
+    return std::find_if(
+        m_fields.begin(),
+        m_fields.end(),
+        [&](const Field &f) { return f.name == name; }
+    );
+}
+
+bool Struct::contains(const std::string &name) const {
     for (const Field &field : m_fields)
         if (field.name == name)
             return true;
     return false;
 }
 
-const Field &Struct::field(const std::string &name) const {
-    for (auto const &field : m_fields)
+const Field &Struct::operator[](const std::string &name) const {
+    for (const Field &field : m_fields)
         if (field.name == name)
             return field;
-    throw std::runtime_error("Struct::field(): unable to find entry \"" + name + "\"");
+    raise("Struct::operator[]: unable to find entry \"" + name + "\"");
 }
 
-Field &Struct::field(const std::string &name) {
-    for (auto &field : m_fields)
+Field &Struct::operator[](const std::string &name) {
+    for (Field &field : m_fields)
         if (field.name == name)
             return field;
-    throw std::runtime_error("Struct::field(): unable to find entry \"" + name + "\"");
+    raise("Struct::operator[]: unable to find entry \"" + name + "\"");
 }
 
 std::ostream &operator<<(std::ostream &os, const Struct &v) {
     os << "Struct[" << std::endl;
-    for (size_t i = 0; i < v.field_count(); ++i) {
+    for (size_t i = 0; i < v.fields(); ++i) {
         const Field &f = v[i];
         os << "  " << f << std::endl;
 
         size_t p0  = f.offset + struct_jit::size(f.type),
-               p1  = i + 1 < v.field_count() ? v[i + 1].offset : v.size(),
+               p1  = i + 1 < v.fields() ? v[i + 1].offset : v.size(),
                pad = p1 - p0;
 
         if (pad > 0)
@@ -129,7 +162,7 @@ size_t size(Type type) {
         case Type::UInt64:
         case Type::Float64: return 8;
         default:
-            throw std::runtime_error("size(): invalid field type!");
+            raise("size(): invalid field type!");
     }
 }
 
@@ -140,7 +173,7 @@ bool operator==(const Field &f1, const Field &f2) {
            f1.type == f2.type &&
            f1.offset == f2.offset &&
            f1.flags == f2.flags &&
-           f1.default_value == f2.default_value;
+           memcmp(&f1.value, &f2.value, size(f1.type)) == 0;
 }
 
 bool operator!=(const Field &f1, const Field &f2) {
@@ -150,10 +183,10 @@ bool operator!=(const Field &f1, const Field &f2) {
 bool operator==(const Struct &s1, const Struct &s2) {
     if (s1.pack() != s2.pack() ||
         s1.byte_order() != s2.byte_order() ||
-        s1.field_count() != s2.field_count())
+        s1.fields() != s2.fields())
         return false;
 
-    for (size_t i = 0; i < s1.field_count(); ++i) {
+    for (size_t i = 0; i < s1.fields(); ++i) {
         if (s1[i] != s2[i])
             return false;
     }
@@ -172,7 +205,7 @@ std::ostream &operator<<(std::ostream &os, const ByteOrder &v) {
         case ByteOrder::Native:        os << "native";        break;
         case ByteOrder::LittleEndian:  os << "little-endian"; break;
         case ByteOrder::BigEndian:     os << "big-endian";    break;
-        default: throw std::runtime_error("operator<<(ByteOrder): invalid field type!");
+        default: raise("operator<<(ByteOrder): invalid field type!");
     }
     return os;
 }
@@ -191,7 +224,7 @@ std::ostream &operator<<(std::ostream &os, const Type &v) {
         case Type::Float16: os << "float16"; break;
         case Type::Float32: os << "float32"; break;
         case Type::Float64: os << "float64"; break;
-        default: throw std::runtime_error("operator<<(Type): invalid field type!");
+        default: raise("operator<<(Type): invalid field type!");
     }
     return os;
 }
@@ -203,7 +236,7 @@ std::ostream &operator<<(std::ostream &os, const Flag &v) {
         case Flag::Check:      os << "check";      break;
         case Flag::Default:    os << "default";    break;
         case Flag::Weight:     os << "weight";     break;
-        default: throw std::runtime_error("operator<<(Flag): invalid field type!");
+        default: raise("operator<<(Flag): invalid field type!");
     }
     return os;
 }
@@ -217,7 +250,7 @@ std::ostream &operator<<(std::ostream &os, const Field &v) {
 
     if (has_flag(v.flags, Flag::Default) ||
         has_flag(v.flags, Flag::Check))
-        os << ", default_value=" << v.default_value;
+        os << ", value=0x" << std::hex << v.value << std::hex;
 
     return os;
 }

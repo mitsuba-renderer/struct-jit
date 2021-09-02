@@ -78,21 +78,75 @@ PYBIND11_MODULE(struct_jit_ext, m_) {
         .def(int() | py::self)
         .def(int() & py::self);
 
-    py::class_<sj::Field>(m, "Field", D(Field))
-        .def(py::init<>())
-        .def(py::init<const sj::Field &>())
-        .def_readwrite("name", &sj::Field::name, D(Field, name))
-        .def_readwrite("type", &sj::Field::type, D(Field, type))
-        .def_readwrite("offset", &sj::Field::offset, D(Field, offset))
-        .def_readwrite("flags", &sj::Field::flags, D(Field, flags))
-        .def_readwrite("default_value", &sj::Field::default_value, D(Field, default_value))
-        .def(py::self == py::self)
-        .def(py::self != py::self)
-        .def("__repr__", [](const sj::Field &f) {
-            std::ostringstream oss;
-            oss << "Field[\n  "<< f << "\n]";
-            return oss.str();
-        });
+    #define DEF_GETTER(TN, T)                                         \
+        case sj::Type::TN: {                                          \
+            T value;                                                  \
+            memcpy(&value, &f.value, sj::size(f.type));               \
+            return py::cast(value);                                   \
+        }
+
+    #define DEF_SETTER(TN, T)                                         \
+        case sj::Type::TN: {                                          \
+            T value = py::cast<T>(o);                                 \
+            f.value = 0;                                              \
+            memcpy(&f.value, &value, sj::size(f.type));               \
+            break;                                                    \
+        }
+
+    py::class_<sj::Field> field(m, "Field", D(Field));
+
+    field.def(py::init<>())
+         .def(py::init<const sj::Field &>())
+         .def_readwrite("name", &sj::Field::name, D(Field, name))
+         .def_readwrite("type", &sj::Field::type, D(Field, type))
+         .def_readwrite("offset", &sj::Field::offset, D(Field, offset))
+         .def_readwrite("flags", &sj::Field::flags, D(Field, flags))
+         .def_property("value",
+             [](const sj::Field &f) -> py::object {
+                 switch (f.type) {
+                     DEF_GETTER(UInt8,   uint8_t)
+                     DEF_GETTER(Int8,     int8_t)
+                     DEF_GETTER(UInt16, uint16_t)
+                     DEF_GETTER(Int16,   int16_t)
+                     DEF_GETTER(UInt32, uint32_t)
+                     DEF_GETTER(Int32,   int32_t)
+                     DEF_GETTER(Float32,   float)
+                     DEF_GETTER(Float64,  double)
+                     default: throw py::type_error("Unexpected field type!");
+                 }
+             },
+             [](sj::Field &f, py::object o) {
+                 switch (f.type) {
+                     DEF_SETTER(UInt8,   uint8_t)
+                     DEF_SETTER(Int8,     int8_t)
+                     DEF_SETTER(UInt16, uint16_t)
+                     DEF_SETTER(Int16,   int16_t)
+                     DEF_SETTER(UInt32, uint32_t)
+                     DEF_SETTER(Int32,   int32_t)
+                     DEF_SETTER(Float32,   float)
+                     DEF_SETTER(Float64,  double)
+                     default: throw py::type_error("Unexpected field type!");
+                 }
+             },
+             D(Field, value));
+
+    #undef DEF_GETTER
+    #undef DEF_SETTER
+
+    field.def(py::self == py::self)
+         .def(py::self != py::self)
+         .def("__repr__", [](const sj::Field &f) {
+             std::ostringstream oss;
+             oss << "Field[\n  "<< f << "\n]";
+             return oss.str();
+         });
+
+    #define DEF_SETTER(TN, T)                                         \
+        case sj::Type::TN: {                                          \
+            T value_cpp = py::cast<T>(value_py);                      \
+            memcpy(&value, &value_cpp, sj::size(type));               \
+            break;                                                    \
+        }
 
     py::class_<sj::Struct>(m, "Struct", D(Struct))
         .def(py::init<bool, sj::ByteOrder>(), D(Struct, Struct),
@@ -131,22 +185,37 @@ PYBIND11_MODULE(struct_jit_ext, m_) {
             return s;
         }), "dtype"_a)
         .def(py::init<const sj::Struct &>())
-        .def("append", (sj::Struct & (sj::Struct::*)(const std::string &, sj::Type, uint32_t, double)) &sj::Struct::append,
-             "name"_a, "type"_a, "flags"_a = 0,
-             "default_value"_a = 0.0, D(Struct, append))
+        .def("append", [](sj::Struct *s, const std::string &name, sj::Type type, uint32_t flags, py::object value_py) -> sj::Struct* {
+            uint64_t value = 0;
+            if (!value_py.is_none()) {
+                switch (type) {
+                    DEF_SETTER(UInt8,   uint8_t)
+                    DEF_SETTER(Int8,     int8_t)
+                    DEF_SETTER(UInt16, uint16_t)
+                    DEF_SETTER(Int16,   int16_t)
+                    DEF_SETTER(UInt32, uint32_t)
+                    DEF_SETTER(Int32,   int32_t)
+                    DEF_SETTER(Float32,   float)
+                    DEF_SETTER(Float64,  double)
+                    default: throw py::type_error("Unexpected field type!");
+                }
+            }
+            s->append(name, type, flags, &value);
+            return s;
+        }, "name"_a, "type"_a, "flags"_a = 0, "value"_a = py::none(), D(Struct, append))
         .def("append", (sj::Struct & (sj::Struct::*)(const sj::Field &)) &sj::Struct::append,
              "field"_a, D(Struct, append, 2))
         .def("align", &sj::Struct::align, D(Struct, align))
         .def("size", &sj::Struct::size, D(Struct, size))
-        .def("byte_order", &sj::Struct::byte_order, D(Struct, byte_order))
-        .def("set_byte_order", &sj::Struct::set_byte_order, D(Struct, set_byte_order))
+        .def("fields", &sj::Struct::fields, D(Struct, fields))
         .def("pack", &sj::Struct::pack, D(Struct, pack))
         .def("set_pack", &sj::Struct::set_pack, D(Struct, set_pack))
-        .def("has_field", &sj::Struct::has_field, D(Struct, has_field))
-        .def("field_count", &sj::Struct::field_count, D(Struct, field_count))
-        .def("field", (sj::Field & (sj::Struct::*)(const std::string &)) &sj::Struct::field, D(Struct, field))
+        .def("byte_order", &sj::Struct::byte_order, D(Struct, byte_order))
+        .def("set_byte_order", &sj::Struct::set_byte_order, D(Struct, set_byte_order))
+        .def("__contains__", &sj::Struct::contains, D(Struct, contains))
+        .def("__getitem__", (sj::Field & (sj::Struct::*)(const std::string &)) &sj::Struct::operator[], py::return_value_policy::reference_internal)
         .def("__getitem__", [](sj::Struct &s, size_t i) -> sj::Field& {
-            if (i >= s.field_count())
+            if (i >= s.fields())
                 throw py::index_error();
             return s[i];
         }, py::return_value_policy::reference_internal)

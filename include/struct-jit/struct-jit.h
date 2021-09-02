@@ -115,8 +115,7 @@ struct SJIT_EXPORT Field {
     uint32_t flags = 0;
 
     /// Default value
-    double default_value = 0;
-
+    uint64_t value = 0;
 };
 
 
@@ -125,7 +124,7 @@ struct SJIT_EXPORT Field {
 class SJIT_EXPORT Struct {
 public:
     using FieldIterator      = std::vector<Field>::iterator;
-    using FieldConstIterator = std::vector<Field>::const_iterator;
+    using ConstFieldIterator = std::vector<Field>::const_iterator;
 
     /**
      * \brief Create an empty data structure
@@ -150,22 +149,22 @@ public:
     Struct &append(const std::string &name,
                    Type type,
                    uint32_t flags = 0,
-                   double default_value = 0.0);
+                   const void *value = nullptr);
 
     /// Append a new field to the \c Struct (manual version)
     Struct &append(const Field &field);
-
-    /// Return the byte order of the \c Struct
-    ByteOrder byte_order() const { return m_byte_order; }
-
-    /// Specify the byte order of the \c Struct
-    void set_byte_order(ByteOrder value);
 
     /// Return whether entries appended to the \c Struct should be tightly packed?
     bool pack() const { return m_pack; }
 
     /// Specify whether entries appended to the \c Struct should be tightly packed?
     void set_pack(bool value) { m_pack = value; }
+
+    /// Return the byte order of the \c Struct
+    ByteOrder byte_order() const { return m_byte_order; }
+
+    /// Specify the byte order of the \c Struct
+    void set_byte_order(ByteOrder value);
 
     /// Return the size (in bytes) of the data structure, including padding
     size_t size() const;
@@ -174,33 +173,39 @@ public:
     size_t align() const;
 
     /// Return the number of fields
-    size_t field_count() const { return m_fields.size(); }
+    size_t fields() const { return m_fields.size(); }
 
-    /// Access an individual field by index
+    /// Check if the \c Struct has a field of the specified name
+    bool contains(const std::string &name) const;
+
+    /// Return an iterator that points to a field with the specified name [const]
+    ConstFieldIterator find(const std::string &name) const;
+
+    /// Return an iterator that points to a field with the specified name
+    FieldIterator find(const std::string &name);
+
+    /// Access an individual field by index [const]
     const Field &operator[](size_t i) const { return m_fields[i]; }
 
     /// Access an individual field by index
     Field &operator[](size_t i) { return m_fields[i]; }
 
-    /// Check if the \c Struct has a field of the specified name
-    bool has_field(const std::string &name) const;
+    /// Access an individual field by index [const]
+    const Field &operator[](const std::string &name) const;
 
-    /// Look up a field by name (throws an exception if not found)
-    const Field &field(const std::string &name) const;
-
-    /// Look up a field by name. Throws an exception if not found
-    Field &field(const std::string &name);
+    /// Access an individual field by index
+    Field &operator[](const std::string &name);
 
     /// Return an iterator associated with the first field
-    FieldConstIterator begin() const { return m_fields.cbegin(); }
+    ConstFieldIterator begin() const { return m_fields.cbegin(); }
 
     /// Return an iterator associated with the first field
     FieldIterator begin() { return m_fields.begin(); }
 
-    /// Return an iterator associated with the end of the data structure
-    FieldConstIterator end() const { return m_fields.cend(); }
+    /// Return an iterator associated with the end of the data structure [const]
+    ConstFieldIterator end() const { return m_fields.cend(); }
 
-    /// Return an iterator associated with the end of the data structure
+    /// Return an iterator associated with the end of the data structure [const]
     FieldIterator end() { return m_fields.end(); }
 
 private:

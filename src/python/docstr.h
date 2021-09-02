@@ -33,7 +33,7 @@ static const char *__doc_struct_jit_ByteOrder_Native = R"doc()doc";
 
 static const char *__doc_struct_jit_Field = R"doc(Specifies a single field of a Struct instance)doc";
 
-static const char *__doc_struct_jit_Field_default_value = R"doc(Default value)doc";
+static const char *__doc_struct_jit_Field_value = R"doc(Default value)doc";
 
 static const char *__doc_struct_jit_Field_flags = R"doc(Additional flags)doc";
 
@@ -100,17 +100,13 @@ static const char *__doc_struct_jit_Struct_begin_2 = R"doc(Return an iterator as
 
 static const char *__doc_struct_jit_Struct_byte_order = R"doc(Return the byte order of the ``Struct``)doc";
 
+static const char *__doc_struct_jit_Struct_contains = R"doc(Check if the ``Struct`` has a field of the specified name)doc";
+
 static const char *__doc_struct_jit_Struct_end = R"doc(Return an iterator associated with the end of the data structure)doc";
 
 static const char *__doc_struct_jit_Struct_end_2 = R"doc(Return an iterator associated with the end of the data structure)doc";
 
-static const char *__doc_struct_jit_Struct_field = R"doc(Look up a field by name (throws an exception if not found))doc";
-
-static const char *__doc_struct_jit_Struct_field_2 = R"doc(Look up a field by name. Throws an exception if not found)doc";
-
-static const char *__doc_struct_jit_Struct_field_count = R"doc(Return the number of fields)doc";
-
-static const char *__doc_struct_jit_Struct_has_field = R"doc(Check if the ``Struct`` has a field of the specified name)doc";
+static const char *__doc_struct_jit_Struct_fields = R"doc(Return the number of fields)doc";
 
 static const char *__doc_struct_jit_Struct_m_byte_order = R"doc()doc";
 
@@ -121,6 +117,10 @@ static const char *__doc_struct_jit_Struct_m_pack = R"doc()doc";
 static const char *__doc_struct_jit_Struct_operator_array = R"doc(Access an individual field by index)doc";
 
 static const char *__doc_struct_jit_Struct_operator_array_2 = R"doc(Access an individual field by index)doc";
+
+static const char *__doc_struct_jit_Struct_operator_array_3 = R"doc(Access an individual field by index)doc";
+
+static const char *__doc_struct_jit_Struct_operator_array_4 = R"doc(Access an individual field by index)doc";
 
 static const char *__doc_struct_jit_Struct_operator_assign = R"doc()doc";
 
