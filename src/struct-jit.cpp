@@ -10,15 +10,17 @@ NAMESPACE_BEGIN(struct_jit)
     throw std::runtime_error(msg);
 }
 
+ByteOrder native_byte_order() { return ByteOrder::LittleEndian; }
+
 Struct::Struct(bool pack, ByteOrder byte_order)
     : m_pack(pack), m_byte_order(byte_order) {
     if (m_byte_order == ByteOrder::Native)
-        m_byte_order = ByteOrder::LittleEndian;
+        m_byte_order = native_byte_order();
 }
 
 void Struct::set_byte_order(ByteOrder value) {
     if (value == ByteOrder::Native)
-        value = ByteOrder::LittleEndian;
+        m_byte_order = native_byte_order();
     m_byte_order = value;
 }
 

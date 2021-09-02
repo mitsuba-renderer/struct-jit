@@ -24,6 +24,8 @@ enum class ByteOrder : uint32_t {
     BigEndian
 };
 
+extern SJIT_EXPORT ByteOrder native_byte_order();
+
 // --------------------------------------------------------------------------
 
 /// List of field types supported by Struct-JIT
@@ -57,14 +59,15 @@ extern SJIT_EXPORT size_t size(Type type);
 /// Optional flags that can be applied to each field
 enum class Flag : uint32_t {
     /**
-     * The integral field encodes a quantized value in the range [0, 1].
-     * Ignored on fields with a floating point type.
+     * The integral field encodes a quantized value in the range [0, 1]. An
+     * error is raised if this flag is specified for a floating point-typed
+     * field.
      */
     Normalized = 1,
 
     /**
-     * The field encodes a sRGB gamma-corrected value. Assumes \c Normalized is
-     * also specified.
+     * The field encodes a sRGB gamma-corrected value. Requires that
+     * \c Normalized is also specified.
      */
     Gamma = 2,
 
