@@ -252,4 +252,27 @@ PYBIND11_MODULE(struct_jit_ext, m_) {
                 return py::dtype(names, formats, offsets, s.size());
             }, "Return an equivalent NumPy dtype")
         ;
+
+    py::class_<sj::Converter>(m, "Converter", D(Converter))
+        .def(py::init<const sj::Struct &, const sj::Struct &>())
+        .def("in", &sj::Converter::in, D(Converter, in))
+        .def("out", &sj::Converter::out, D(Converter, out))
+        .def("convert", [](const sj::Converter &c, py::bytes input_) -> py::bytes {
+            std::string input(input_);
+            size_t count = input.length() / c.in().size();
+            if (count * c.in().size() != input.length())
+                throw std::runtime_error("Input length is not divisible by record size!");
+
+            std::string result(c.out().size() * count, '\0');
+            if (!c.convert(input.data(), (void *) result.data(), count, 1))
+                throw std::runtime_error("Conversion failed!");
+
+            return result;
+        });
+
+    m.def("is_signed_int", &sj::is_signed_int);
+    m.def("is_unsigned_int", &sj::is_unsigned_int);
+    m.def("is_signed", &sj::is_signed);
+    m.def("is_float", &sj::is_float);
+    m.def("size", &sj::size);
 }

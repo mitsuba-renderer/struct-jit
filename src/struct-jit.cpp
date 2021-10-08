@@ -21,7 +21,8 @@ Struct::Struct(bool pack, ByteOrder byte_order)
 void Struct::set_byte_order(ByteOrder value) {
     if (value == ByteOrder::Native)
         m_byte_order = native_byte_order();
-    m_byte_order = value;
+    else
+        m_byte_order = value;
 }
 
 size_t Struct::align() const {
@@ -148,6 +149,10 @@ bool is_unsigned_int(Type type) {
 
 bool is_float(Type type) {
     return type == Type::Float16 || type == Type::Float32 || type == Type::Float64;
+}
+
+bool is_signed(Type type) {
+    return is_signed_int(type) || is_float(type);
 }
 
 size_t size(Type type) {

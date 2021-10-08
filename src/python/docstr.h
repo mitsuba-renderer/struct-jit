@@ -31,9 +31,25 @@ static const char *__doc_struct_jit_ByteOrder_LittleEndian = R"doc()doc";
 
 static const char *__doc_struct_jit_ByteOrder_Native = R"doc()doc";
 
-static const char *__doc_struct_jit_Field = R"doc(Specifies a single field of a Struct instance)doc";
+static const char *__doc_struct_jit_Converter = R"doc()doc";
 
-static const char *__doc_struct_jit_Field_value = R"doc(Default value)doc";
+static const char *__doc_struct_jit_Converter_Converter = R"doc()doc";
+
+static const char *__doc_struct_jit_Converter_convert = R"doc()doc";
+
+static const char *__doc_struct_jit_Converter_convert_slow = R"doc()doc";
+
+static const char *__doc_struct_jit_Converter_create_plan = R"doc()doc";
+
+static const char *__doc_struct_jit_Converter_in = R"doc()doc";
+
+static const char *__doc_struct_jit_Converter_m_in = R"doc()doc";
+
+static const char *__doc_struct_jit_Converter_m_out = R"doc()doc";
+
+static const char *__doc_struct_jit_Converter_out = R"doc()doc";
+
+static const char *__doc_struct_jit_Field = R"doc(Specifies a single field of a Struct instance)doc";
 
 static const char *__doc_struct_jit_Field_flags = R"doc(Additional flags)doc";
 
@@ -42,6 +58,8 @@ static const char *__doc_struct_jit_Field_name = R"doc(Name of the field)doc";
 static const char *__doc_struct_jit_Field_offset = R"doc(Offset within the ``Struct`` (in bytes))doc";
 
 static const char *__doc_struct_jit_Field_type = R"doc(Type identifier)doc";
+
+static const char *__doc_struct_jit_Field_value = R"doc(Default value)doc";
 
 static const char *__doc_struct_jit_Flag = R"doc(Optional flags that can be applied to each field)doc";
 
@@ -54,12 +72,13 @@ R"doc(When the field is missing in the source record, replace it by the
 specified default value.)doc";
 
 static const char *__doc_struct_jit_Flag_Gamma =
-R"doc(The field encodes a sRGB gamma-corrected value. Assumes ``Normalized``
-is also specified.)doc";
+R"doc(The field encodes a sRGB gamma-corrected value. Requires that
+``Normalized`` is also specified.)doc";
 
 static const char *__doc_struct_jit_Flag_Normalized =
-R"doc(The integral field encodes a quantized value in the range [0, 1].
-Ignored on fields with a floating point type.)doc";
+R"doc(The integral field encodes a quantized value in the range [0, 1]. An
+error is raised if this flag is specified for a floating point-typed
+field.)doc";
 
 static const char *__doc_struct_jit_Flag_Weight =
 R"doc(The field stores a weight value. All other struct members are
@@ -102,23 +121,31 @@ static const char *__doc_struct_jit_Struct_byte_order = R"doc(Return the byte or
 
 static const char *__doc_struct_jit_Struct_contains = R"doc(Check if the ``Struct`` has a field of the specified name)doc";
 
-static const char *__doc_struct_jit_Struct_end = R"doc(Return an iterator associated with the end of the data structure)doc";
+static const char *__doc_struct_jit_Struct_end =
+R"doc(Return an iterator associated with the end of the data structure
+[const])doc";
 
-static const char *__doc_struct_jit_Struct_end_2 = R"doc(Return an iterator associated with the end of the data structure)doc";
+static const char *__doc_struct_jit_Struct_end_2 =
+R"doc(Return an iterator associated with the end of the data structure
+[const])doc";
 
 static const char *__doc_struct_jit_Struct_fields = R"doc(Return the number of fields)doc";
 
-static const char *__doc_struct_jit_Struct_m_byte_order = R"doc()doc";
+static const char *__doc_struct_jit_Struct_find =
+R"doc(Return an iterator that points to a field with the specified name
+[const])doc";
 
-static const char *__doc_struct_jit_Struct_m_fields = R"doc()doc";
+static const char *__doc_struct_jit_Struct_find_2 = R"doc(Return an iterator that points to a field with the specified name)doc";
+
+static const char *__doc_struct_jit_Struct_m_byte_order = R"doc()doc";
 
 static const char *__doc_struct_jit_Struct_m_pack = R"doc()doc";
 
-static const char *__doc_struct_jit_Struct_operator_array = R"doc(Access an individual field by index)doc";
+static const char *__doc_struct_jit_Struct_operator_array = R"doc(Access an individual field by index [const])doc";
 
 static const char *__doc_struct_jit_Struct_operator_array_2 = R"doc(Access an individual field by index)doc";
 
-static const char *__doc_struct_jit_Struct_operator_array_3 = R"doc(Access an individual field by index)doc";
+static const char *__doc_struct_jit_Struct_operator_array_3 = R"doc(Access an individual field by index [const])doc";
 
 static const char *__doc_struct_jit_Struct_operator_array_4 = R"doc(Access an individual field by index)doc";
 
@@ -171,6 +198,8 @@ static const char *__doc_struct_jit_is_float = R"doc(Check whether the given typ
 static const char *__doc_struct_jit_is_signed_int = R"doc(Check whether the given type is a signed integer)doc";
 
 static const char *__doc_struct_jit_is_unsigned_int = R"doc(Check whether the given type is an unsigned integer)doc";
+
+static const char *__doc_struct_jit_native_byte_order = R"doc()doc";
 
 static const char *__doc_struct_jit_operator_add = R"doc()doc";
 

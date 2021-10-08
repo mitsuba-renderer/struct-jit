@@ -51,6 +51,9 @@ extern SJIT_EXPORT bool is_unsigned_int(Type type);
 /// Check whether the given type is a floating point type
 extern SJIT_EXPORT bool is_float(Type type);
 
+/// Check whether the given type is a signed type
+extern SJIT_EXPORT bool is_signed(Type type);
+
 /// Return the size in bytes of the given variable type
 extern SJIT_EXPORT size_t size(Type type);
 
@@ -215,6 +218,28 @@ private:
     bool m_pack;
     ByteOrder m_byte_order;
     std::vector<Field> m_fields;
+};
+// --------------------------------------------------------------------------
+
+
+/**
+ */
+class SJIT_EXPORT Converter {
+public:
+    Converter(const Struct &in, const Struct &out);
+
+    const Struct &in() const { return m_in; }
+    const Struct &out() const { return m_out; }
+
+    bool convert(const void *in, void *out, size_t width, size_t height) const;
+
+private:
+    void create_plan();
+    bool convert_slow(const uint8_t *in, uint8_t *out, size_t x, size_t y) const;
+
+private:
+    Struct m_in, m_out;
+    std::vector<std::pair<size_t, size_t>> m_plan;
 };
 
 // --------------------------------------------------------------------------

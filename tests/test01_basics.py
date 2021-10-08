@@ -1,6 +1,36 @@
-from struct_jit import Struct, Type, ByteOrder
+from struct_jit import Struct, Converter, Type, ByteOrder, is_signed
 import numpy as np
 import pytest
+import struct
+import binascii
+
+# List of supported conversions
+supported_types = [
+    ('b', Type.Int8),
+    ('B', Type.UInt8),
+    ('h', Type.Int16),
+    ('H', Type.UInt16),
+    ('i', Type.Int32),
+    ('I', Type.UInt32),
+    ('q', Type.Int64),
+    ('Q', Type.UInt64),
+    ('e', Type.Float16),
+    ('f', Type.Float32),
+    ('d', Type.Float64)
+]
+
+
+def check_conversion(conv, src_fmt, dst_fmt, data_in,
+                     data_out=None, err_thresh=1e-6):
+    src_data = struct.pack(src_fmt, *data_in)
+    print(binascii.hexlify(src_data).decode('utf8'))
+    converted = conv.convert(src_data)
+    print(binascii.hexlify(converted).decode('utf8'))
+    dst_data = struct.unpack(dst_fmt, converted)
+    ref = data_out if data_out is not None else data_in
+    for i in range(len(dst_data)):
+        abs_err = float(dst_data[i]) - float(ref[i])
+        assert np.abs(abs_err / (ref[i] + 1e-6)) < err_thresh
 
 
 def test01_append_inspect():
@@ -40,6 +70,16 @@ def test03_roundtrip_dtype(pack, byte_order):
     s.append('c', Type.Float32).append('a', Type.UInt64)
     dt = s.dtype()
     s2 = Struct(dt)
-    print(repr(s))
-    print(repr(s2))
     assert s == s2
+
+
+@pytest.mark.parametrize('param', supported_types)
+def test02_passthrough(param):
+    s = Struct().append('val', param[1])
+    ss = Converter(s, s)
+    values = list(range(10))
+    if is_signed(param[1]):
+        values += list(range(-10, 0))
+    check_conversion(ss, '@' + param[0] * len(values),
+                         '@' + param[0] * len(values),
+                         values)
