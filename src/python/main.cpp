@@ -254,25 +254,29 @@ PYBIND11_MODULE(struct_jit_ext, m_) {
         ;
 
     py::class_<sj::Converter>(m, "Converter", D(Converter))
-        .def(py::init<const sj::Struct &, const sj::Struct &>())
+        .def(py::init<const sj::Struct &, const sj::Struct &, bool>(), "in"_a,
+             "out"_a, "jit"_a = true)
         .def("in", &sj::Converter::in, D(Converter, in))
         .def("out", &sj::Converter::out, D(Converter, out))
-        .def("convert", [](const sj::Converter &c, py::bytes input_) -> py::bytes {
-            std::string input(input_);
-            size_t count = input.length() / c.in().size();
-            if (count * c.in().size() != input.length())
-                throw std::runtime_error("Input length is not divisible by record size!");
+        .def("convert",
+             [](const sj::Converter &c, py::bytes input_) -> py::bytes {
+                 std::string input(input_);
+                 size_t count = input.length() / c.in().size();
+                 if (count * c.in().size() != input.length())
+                     throw std::runtime_error(
+                         "Input length is not divisible by record size!");
 
-            std::string result(c.out().size() * count, '\0');
-            if (!c.convert(input.data(), (void *) result.data(), count, 1))
-                throw std::runtime_error("Conversion failed!");
+                 std::string result(c.out().size() * count, '\0');
+                 if (!c.convert(input.data(), (void *) result.data(), count, 1))
+                     throw std::runtime_error("Conversion failed!");
 
-            return result;
-        });
+                 return result;
+             }, D(Converter, convert));
 
-    m.def("is_signed_int", &sj::is_signed_int);
-    m.def("is_unsigned_int", &sj::is_unsigned_int);
-    m.def("is_signed", &sj::is_signed);
-    m.def("is_float", &sj::is_float);
-    m.def("size", &sj::size);
+    m.def("is_signed_int", &sj::is_signed_int, D(is_signed_int));
+    m.def("is_unsigned_int", &sj::is_unsigned_int, D(is_unsigned_int));
+    m.def("is_signed", &sj::is_signed, D(is_signed));
+    m.def("is_float", &sj::is_float, D(is_float));
+    m.def("size", &sj::size, D(size));
+    m.def("range", &sj::range, D(range));
 }

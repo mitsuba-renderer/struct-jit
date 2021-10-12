@@ -173,6 +173,38 @@ size_t size(Type type) {
     }
 }
 
+std::pair<double, double> range(Type type) {
+    std::pair<double, double> result;
+
+    #define COMPUTE_RANGE(key, type)                                      \
+        case key:                                                         \
+            result = std::make_pair(std::numeric_limits<type>::min(),     \
+                                    std::numeric_limits<type>::max());    \
+            break;
+
+    switch (type) {
+        COMPUTE_RANGE(Type::UInt8, uint8_t);
+        COMPUTE_RANGE(Type::Int8, int8_t);
+        COMPUTE_RANGE(Type::UInt16, uint16_t);
+        COMPUTE_RANGE(Type::Int16, int16_t);
+        COMPUTE_RANGE(Type::UInt32, uint32_t);
+        COMPUTE_RANGE(Type::Int32, int32_t);
+        COMPUTE_RANGE(Type::UInt64, uint64_t);
+        COMPUTE_RANGE(Type::Int64, int64_t);
+        COMPUTE_RANGE(Type::Float32, float);
+        COMPUTE_RANGE(Type::Float64, double);
+
+        case Type::Float16:
+            result = std::make_pair(-65504, 65504);
+            break;
+
+        default:
+            raise("Internal error: invalid field type");
+    }
+
+    return result;
+}
+
 // --------------------------------------------------------------------------
 
 bool operator==(const Field &f1, const Field &f2) {

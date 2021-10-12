@@ -52,12 +52,12 @@ static void convert_scalar_3(void *ptr, bool norm) {
     memcpy(&source, ptr, sizeof(Source));
 
     if (!std::is_integral_v<Source> && std::is_integral_v<Target> && norm)
-        source *= 1.f / Source(std::numeric_limits<Target>::max());
+        source = Source(double(source) / std::numeric_limits<Target>::max());
 
     Target target = (Target) source;
 
     if (std::is_integral_v<Source> && !std::is_integral_v<Target> && norm)
-        target *= Target(std::numeric_limits<Source>::max());
+        target = Target(double(target) * std::numeric_limits<Source>::max());
 
     memcpy(ptr, &target, sizeof(Target));
 }
@@ -96,8 +96,8 @@ static void convert_scalar(Temp &t, Type target, bool norm) {
     t.type = target;
 }
 
-Converter::Converter(const Struct &in, const Struct &out)
-    : m_in(in), m_out(out) {
+Converter::Converter(const Struct &in, const Struct &out, bool jit)
+    : m_in(in), m_out(out), m_jit(jit) {
     create_plan();
 }
 

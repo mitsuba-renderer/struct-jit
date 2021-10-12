@@ -57,6 +57,9 @@ extern SJIT_EXPORT bool is_signed(Type type);
 /// Return the size in bytes of the given variable type
 extern SJIT_EXPORT size_t size(Type type);
 
+/// Return the representable range of a particular type
+extern SJIT_EXPORT std::pair<double, double> range(Type type);
+
 // --------------------------------------------------------------------------
 
 /// Optional flags that can be applied to each field
@@ -226,7 +229,7 @@ private:
  */
 class SJIT_EXPORT Converter {
 public:
-    Converter(const Struct &in, const Struct &out);
+    Converter(const Struct &in, const Struct &out, bool jit = true);
 
     const Struct &in() const { return m_in; }
     const Struct &out() const { return m_out; }
@@ -240,6 +243,7 @@ private:
 private:
     Struct m_in, m_out;
     std::vector<std::pair<size_t, size_t>> m_plan;
+    bool m_jit;
 };
 
 // --------------------------------------------------------------------------

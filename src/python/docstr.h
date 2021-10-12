@@ -45,7 +45,11 @@ static const char *__doc_struct_jit_Converter_in = R"doc()doc";
 
 static const char *__doc_struct_jit_Converter_m_in = R"doc()doc";
 
+static const char *__doc_struct_jit_Converter_m_jit = R"doc()doc";
+
 static const char *__doc_struct_jit_Converter_m_out = R"doc()doc";
+
+static const char *__doc_struct_jit_Converter_m_plan = R"doc()doc";
 
 static const char *__doc_struct_jit_Converter_out = R"doc()doc";
 
@@ -139,6 +143,8 @@ static const char *__doc_struct_jit_Struct_find_2 = R"doc(Return an iterator tha
 
 static const char *__doc_struct_jit_Struct_m_byte_order = R"doc()doc";
 
+static const char *__doc_struct_jit_Struct_m_fields = R"doc()doc";
+
 static const char *__doc_struct_jit_Struct_m_pack = R"doc()doc";
 
 static const char *__doc_struct_jit_Struct_operator_array = R"doc(Access an individual field by index [const])doc";
@@ -195,6 +201,8 @@ static const char *__doc_struct_jit_has_flag = R"doc()doc";
 
 static const char *__doc_struct_jit_is_float = R"doc(Check whether the given type is a floating point type)doc";
 
+static const char *__doc_struct_jit_is_signed = R"doc(Check whether the given type is a signed type)doc";
+
 static const char *__doc_struct_jit_is_signed_int = R"doc(Check whether the given type is a signed integer)doc";
 
 static const char *__doc_struct_jit_is_unsigned_int = R"doc(Check whether the given type is an unsigned integer)doc";
@@ -230,6 +238,8 @@ static const char *__doc_struct_jit_operator_lshift_5 = R"doc()doc";
 static const char *__doc_struct_jit_operator_ne = R"doc()doc";
 
 static const char *__doc_struct_jit_operator_ne_2 = R"doc()doc";
+
+static const char *__doc_struct_jit_range = R"doc(Return the representable range of a particular type)doc";
 
 static const char *__doc_struct_jit_size = R"doc(Return the size in bytes of the given variable type)doc";
 
