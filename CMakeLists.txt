@@ -15,6 +15,7 @@ add_library(
   include/struct-jit/struct-jit.h
   src/struct-jit.cpp
   src/convert.cpp
+  src/half.cpp
 )
 
 target_compile_definitions(struct-jit PRIVATE -DSJIT_BUILD=1)

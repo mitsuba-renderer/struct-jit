@@ -1,6 +1,13 @@
 #include <struct-jit/struct-jit.h>
 #include <stdexcept>
 #include <cstring>
+#include <cmath>
+
+#if defined(__GNUC__)
+#  pragma GCC diagnostic ignored "-Wimplicit-int-float-conversion"
+#endif
+
+#include "half.h"
 
 NAMESPACE_BEGIN(struct_jit)
 
@@ -51,13 +58,17 @@ static void convert_scalar_3(void *ptr, bool norm) {
     Source source;
     memcpy(&source, ptr, sizeof(Source));
 
-    if (!std::is_integral_v<Source> && std::is_integral_v<Target> && norm)
-        source = Source(double(source) / std::numeric_limits<Target>::max());
+    if constexpr (!std::is_integral_v<Source> && std::is_integral_v<Target>) {
+        if (norm)
+            source = Source(std::rint(double(source) * std::numeric_limits<Target>::max()));
+    }
 
     Target target = (Target) source;
 
-    if (std::is_integral_v<Source> && !std::is_integral_v<Target> && norm)
-        target = Target(double(target) * std::numeric_limits<Source>::max());
+    if constexpr (std::is_integral_v<Source> && !std::is_integral_v<Target>) {
+        if (norm)
+            target = Target(double(target) / std::numeric_limits<Source>::max());
+    }
 
     memcpy(ptr, &target, sizeof(Target));
 }
@@ -71,7 +82,9 @@ template <typename Target> static void convert_scalar_2(Temp &t, bool norm) {
         case Type::UInt16:  convert_scalar_3<Target, uint16_t> (d, norm); break;
         case Type::Int32:   convert_scalar_3<Target, int32_t>  (d, norm); break;
         case Type::UInt32:  convert_scalar_3<Target, uint32_t> (d, norm); break;
-        // case Type::Float16: convert_scalar_3<Target, half>     (d, norm); break;
+        case Type::Int64:   convert_scalar_3<Target, int64_t>  (d, norm); break;
+        case Type::UInt64:  convert_scalar_3<Target, uint64_t> (d, norm); break;
+        case Type::Float16: convert_scalar_3<Target, half>     (d, norm); break;
         case Type::Float32: convert_scalar_3<Target, float>    (d, norm); break;
         case Type::Float64: convert_scalar_3<Target, double>   (d, norm); break;
         default:
@@ -87,7 +100,9 @@ static void convert_scalar(Temp &t, Type target, bool norm) {
         case Type::UInt16:  convert_scalar_2<uint16_t> (t, norm); break;
         case Type::Int32:   convert_scalar_2<int32_t>  (t, norm); break;
         case Type::UInt32:  convert_scalar_2<uint32_t> (t, norm); break;
-        // case Type::Float16: convert_scalar_2<half>     (t, norm); break;
+        case Type::Int64:   convert_scalar_2<int64_t>  (t, norm); break;
+        case Type::UInt64:  convert_scalar_2<uint64_t> (t, norm); break;
+        case Type::Float16: convert_scalar_2<half>     (t, norm); break;
         case Type::Float32: convert_scalar_2<float>    (t, norm); break;
         case Type::Float64: convert_scalar_2<double>   (t, norm); break;
         default:

@@ -1,10 +1,11 @@
 Struct-JIT
 ==========
 
-This small self-contained library facilitates converting data from one kind of
-structured representation to another. The need for this frequently arises when
-dealing with visual information including images or 3D meshes. For example,
-consider the following data structures describing positions tagged with color.
+This small self-contained library facilitates efficient conversion from one
+kind of structured representation to another. The need for this frequently
+arises when dealing with visual information including images or 3D meshes. For
+example, consider the following data structures describing positions tagged
+with color.
 
 ```cpp
 struct Source { // <-- Big endian! :(
@@ -31,8 +32,8 @@ extra fields with a default value (e.g. alpha channel).
 While hard-coding such a conversion for a specific type of input and output is
 easy, things quickly become messy when the format of the input data structure
 ``Source`` <em>only becomes known at runtime</em>. This is where Struct-JIT
-becomes useful.
-
+shines: it generates efficient code to performs the desired conversion on the
+fly.
 
 Features
 --------
@@ -50,6 +51,9 @@ Struct-JIT deals with
   producing output with low bit depth (e.g. 8 bit).
 - <b>Checks</b>: can check that certain entries have specified default values.
 
+The library provides *C++* and *Python* (optional) interfaces to all
+functionality.
+
 Just-in-time compilation
 ------------------------
 
@@ -64,3 +68,6 @@ widely architectures, specifically ``x86_64`` (Ivy Bridge or newer) and
 Due to the basic nature of the task, the JIT compiler admits a particularly
 simple and fast implementation that merely copies and pastes pre-compiled
 snippets to assemble the final conversion function.
+
+Finally, a slow software emulation mode is also available. Its main application
+is to validate the JIT implementation in testcases.

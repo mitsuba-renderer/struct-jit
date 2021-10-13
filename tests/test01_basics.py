@@ -31,6 +31,8 @@ def check_conversion(conv, src_fmt, dst_fmt, data_in,
     converted = conv.convert(src_data)
     print(binascii.hexlify(converted).decode('utf8'))
     dst_data = struct.unpack(dst_fmt, converted)
+    print(dst_data)
+
     ref = data_out if data_out is not None else data_in
     for i in range(len(dst_data)):
         abs_err = float(dst_data[i]) - float(ref[i])
@@ -51,7 +53,7 @@ def test01_append_inspect():
 
     with pytest.raises(IndexError):
         s[2]
-    r = 'sj.Struct[\n  float32 c; // @0\n  // 4 bytes of padding\n  uint64 a; // @8\n]'
+    r = 'Struct[\n  float32 c; // @0\n  // 4 bytes of padding\n  uint64 a; // @8\n]'
     assert str(s) == r
 
 
@@ -63,7 +65,7 @@ def test02_pack():
     assert s[0] == fc and s[1] == fa
     assert fc.offset == 0 and fa.offset == 4
     assert fc.type == sj.Type.Float32 and fa.type == sj.Type.UInt64
-    r = 'sj.Struct[\n  float32 c; // @0\n  uint64 a; // @4\n]'
+    r = 'Struct[\n  float32 c; // @0\n  uint64 a; // @4\n]'
     assert str(s) == r
 
 
@@ -79,7 +81,7 @@ def test03_roundtrip_dtype(pack, byte_order):
 
 @pytest.mark.parametrize('param', supported_types)
 @pytest.mark.parametrize('jit', [False, True])
-def test02_roundtrip(param, jit):
+def test04_roundtrip(param, jit):
     s = sj.Struct().append('val', param[1])
     ss = sj.Converter(s, s, jit=jit)
     values = list(range(10))
@@ -93,7 +95,7 @@ def test02_roundtrip(param, jit):
 @pytest.mark.parametrize('source', supported_types_int)
 @pytest.mark.parametrize('dest', supported_types_float)
 @pytest.mark.parametrize('jit', [False, True])
-def test02_roundtrip_normalized(source, dest, jit):
+def test05_roundtrip_normalized(source, dest, jit):
     s1 = sj.Struct().append('val', source[1], sj.Flag.Normalized)
     s2 = sj.Struct().append('val', dest[1])
 
@@ -106,10 +108,12 @@ def test02_roundtrip_normalized(source, dest, jit):
     max_range = sj.range(source[1])[1]
     values_out = [i / max_range for i in values_in]
 
+    print("%s -> %s" % (str(source[1]), str(dest[1])))
     check_conversion(s12, '@' + source[0] * len(values_in),
                           '@' + dest[0] * len(values_out),
                           values_in, values_out)
 
+    print("%s -> %s" % (str(dest[1]), str(source[1])))
     check_conversion(s21, '@' + dest[0] * len(values_out),
                           '@' + source[0] * len(values_in),
                           values_out, values_in)
