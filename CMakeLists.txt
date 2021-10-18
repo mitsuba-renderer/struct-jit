@@ -14,8 +14,9 @@ add_library(
   SHARED
   include/struct-jit/struct-jit.h
   src/struct-jit.cpp
-  src/convert.cpp
+  src/converter.cpp
   src/half.cpp
+  src/jit.cpp
 )
 
 target_compile_definitions(struct-jit PRIVATE -DSJIT_BUILD=1)

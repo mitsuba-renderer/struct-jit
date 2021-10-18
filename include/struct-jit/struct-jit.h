@@ -230,6 +230,7 @@ private:
 class SJIT_EXPORT Converter {
 public:
     Converter(const Struct &in, const Struct &out, bool jit = true);
+    ~Converter();
 
     const Struct &in() const { return m_in; }
     const Struct &out() const { return m_out; }
@@ -238,12 +239,16 @@ public:
 
 private:
     void create_plan();
-    bool convert_slow(const uint8_t *in, uint8_t *out, size_t x, size_t y) const;
+    void create_kernel();
+    void release_kernel();
+    bool convert_fallback(const uint8_t *in, uint8_t *out, size_t x, size_t y) const;
 
 private:
+    using Kernel = bool (const void *, void *, size_t, size_t);
     Struct m_in, m_out;
     std::vector<std::pair<size_t, size_t>> m_plan;
-    bool m_jit;
+    Kernel *m_kernel;
+    size_t m_kernel_size;
 };
 
 // --------------------------------------------------------------------------

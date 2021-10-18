@@ -1,7 +1,7 @@
 .intel_syntax
 .text
 
-# void convert(size_t height, size_t width, const void *src, void *dst) {
+# void convert(size_t height, size_t width, const void *in, void *out) {
 #     for (size_t y = 0; y < height; ++y) {
 #         for (size_t x = 0; x < width; ++x) {
 #             for (each field) {
@@ -31,15 +31,15 @@ main_start_end:
 
 # << Loop body goes here >>
 
-main_inc_src:
-    add src, extra
-main_inc_src_end:
-    .size main_inc_src, main_inc_src_end-main_inc_src
+main_inc_in:
+    add in, extra
+main_inc_in_end:
+    .size main_inc_in, main_inc_in_end-main_inc_in
 
-main_inc_dst:
-    add dst, extra
-main_inc_dst_end:
-    .size main_inc_dst, main_inc_dst_end-main_inc_dst
+main_inc_out:
+    add out, extra
+main_inc_out_end:
+    .size main_inc_out, main_inc_out_end-main_inc_out
 
 main_suffix_inner:
     inc x
@@ -65,101 +65,129 @@ main_postfix_end:
 # ====> Load direct
 
 load_u1:
-    mov al, byte ptr [src + extra]
+    mov al, byte ptr [in + extra]
 load_u1_end:
     .size load_u1, load_u1_end-load_u1
 
 load_u2:
-    mov ax, word ptr [src + extra]
+    mov ax, word ptr [in + extra]
 load_u2_end:
     .size load_u2, load_u2_end-load_u2
 
 load_u4:
-    mov eax, dword ptr [src + extra]
+    mov eax, dword ptr [in + extra]
 load_u4_end:
     .size load_u4, load_u4_end-load_u4
 
 load_u8:
-    mov rax, qword ptr [src + extra]
+    mov rax, qword ptr [in + extra]
 load_u8_end:
     .size load_u8, load_u8_end-load_u8
 
 load_f2:
-    movzx eax, word ptr [src + extra]
+    movzx eax, word ptr [in + extra]
     vmovd xmm0, eax
     vcvtph2ps xmm0, xmm0
 load_f2_end:
     .size load_f2, load_f2_end-load_f2
 
 load_f4:
-    vmovss xmm0, dword ptr [src + extra]
+    vmovss xmm0, dword ptr [in + extra]
 load_f4_end:
     .size load_f4, load_f4_end-load_f4
 
 load_f8:
-    vmovsd xmm0, qword ptr [src + extra]
+    vmovsd xmm0, qword ptr [in + extra]
 load_f8_end:
     .size load_f8, load_f8_end-load_f8
 
 # ====> Store direct
 
 store_u1:
-    mov byte ptr [dst + extra], al
+    mov byte ptr [out + extra], al
 store_u1_end:
     .size store_u1, store_u1_end-store_u1
 
 store_u2:
-    mov word ptr [dst + extra], ax
+    mov word ptr [out + extra], ax
 store_u2_end:
     .size store_u2, store_u2_end-store_u2
 
 store_u4:
-    mov dword ptr [dst + extra], eax
+    mov dword ptr [out + extra], eax
 store_u4_end:
     .size store_u4, store_u4_end-store_u4
 
 store_u8:
-    mov qword ptr [dst + extra], rax
+    mov qword ptr [out + extra], rax
 store_u8_end:
     .size store_u8, store_u8_end-store_u8
 
 store_f2:
     vcvtps2ph xmm0, xmm0, 0
     vmovd eax, xmm0
-    mov word ptr [dst + extra], ax
+    mov word ptr [out + extra], ax
 store_f2_end:
     .size store_f2, store_f2_end-store_f2
 
 store_f4:
-    vmovss dword ptr [dst + extra], xmm0
+    vmovss dword ptr [out + extra], xmm0
 store_f4_end:
     .size store_f4, store_f4_end-store_f4
 
 store_f8:
-    vmovsd qword ptr [dst + extra], xmm0
+    vmovsd qword ptr [out + extra], xmm0
 store_f8_end:
     .size store_f8, store_f8_end-store_f8
 
-# ====> Endianness swap
+# ====> Endianness swap, register exchange
 
-bswap_1:
-bswap_1_end:
-    .size bswap_1, bswap_1_end-bswap_1
-
-bswap_2:
+bswap_u2:
     xchg ah, al
-bswap_2_end:
-    .size bswap_2, bswap_2_end-bswap_2
+bswap_u2_end:
+    .size bswap_u2, bswap_u2_end-bswap_u2
 
-bswap_4:
+bswap_u4:
     bswap eax
-bswap_4_end:
-    .size bswap_4, bswap_4_end-bswap_4
+bswap_u4_end:
+    .size bswap_u4, bswap_u4_end-bswap_u4
 
-bswap_8:
+bswap_u8:
     bswap rax
-bswap_8_end:
-    .size bswap_8, bswap_8_end-bswap_8
+bswap_u8_end:
+    .size bswap_u8, bswap_u8_end-bswap_u8
+
+mov_u2_f2:
+    vmovd xmm0, eax
+    vcvtph2ps xmm0, xmm0
+mov_u2_f2_end:
+    .size mov_u2_f2, mov_u2_f2_end-mov_u2_f2
+
+mov_f2_u2:
+    vcvtps2ph xmm0, xmm0, 0
+    vmovd eax, xmm0
+mov_f2_u2_end:
+    .size mov_f2_u2, mov_f2_u2_end-mov_f2_u2
+
+mov_u4_f4:
+    vmovd xmm0, eax
+mov_u4_f4_end:
+    .size mov_u4_f4, mov_u4_f4_end-mov_u4_f4
+
+mov_f4_u4:
+    vmovd eax, xmm0
+mov_f4_u4_end:
+    .size mov_f4_u4, mov_f4_u4_end-mov_f4_u4
+
+mov_u8_f8:
+    vmovq xmm0, rax
+mov_u8_f8_end:
+    .size mov_u8_f8, mov_u8_f8_end-mov_u8_f8
+
+mov_f8_u8:
+    vmovq rax, xmm0
+mov_f8_u8_end:
+    .size mov_f8_u8, mov_f8_u8_end-mov_f8_u8
 
 # ====> Integer -> Float conversion
 
@@ -230,23 +258,6 @@ cvt_i4_f8:
     vcvtsi2sd xmm0, xmm0, eax
 cvt_i4_f8_end:
     .size cvt_i4_f8, cvt_i4_f8_end-cvt_i4_f8
-
-cvt_u8_f4:
-    test rax, rax
-    js cvg_u8_f4_tmp
-    vcvtsi2ss xmm0, xmm0, rax
-    jmp cvt_u8_f4_end
-cvg_u8_f4_tmp:
-    shr rax
-    vcvtsi2ss xmm0, xmm0, rax
-    vaddss xmm0, xmm0, xmm0
-cvt_u8_f4_end:
-    .size cvt_u8_f4, cvt_u8_f4_end-cvt_u8_f4
-
-cvt_i8_f4:
-    vcvtsi2ss xmm0, xmm0, rax
-cvt_i8_f4_end:
-    .size cvt_i8_f4, cvt_i8_f4_end-cvt_i8_f4
 
 cvt_u8_f8:
     test rax, rax

@@ -1,9 +1,9 @@
 #define extra 0x12345678 // Dummy value in assembly snippets that will be replaced
 
-#define height rcx
-#define width  rdx
-#define src    r8
-#define dst    r9
+#define in     rcx
+#define out    rdx
+#define width  r8
+#define height r9
 
 #define y      r10
 #define x      r11

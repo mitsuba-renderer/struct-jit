@@ -112,9 +112,17 @@ static void convert_scalar(Temp &t, Type target, bool norm) {
 }
 
 Converter::Converter(const Struct &in, const Struct &out, bool jit)
-    : m_in(in), m_out(out), m_jit(jit) {
+    : m_in(in), m_out(out), m_kernel(nullptr), m_kernel_size(0) {
     create_plan();
+    if (jit)
+        create_kernel();
 }
+
+Converter::~Converter() {
+    if (m_kernel)
+        release_kernel();
+}
+
 
 /**
  * Analyze the input data and output data structure and prepare a list of
@@ -183,44 +191,47 @@ void Converter::create_plan() {
 
 bool Converter::convert(const void *in, void *out, size_t width,
                         size_t height) const {
-    const uint8_t *in_ptr = (const uint8_t *) in;
-    uint8_t *out_ptr = (uint8_t *) out;
-    size_t in_size = m_in.size(), out_size = m_out.size();
+    if (m_kernel) {
+        return m_kernel(in, out, width, height);
+    } else {
+        const uint8_t *in_ptr = (const uint8_t *) in;
+        uint8_t *out_ptr = (uint8_t *) out;
+        size_t in_size = m_in.size(), out_size = m_out.size();
 
-    for (size_t y = 0; y < height; ++y) {
-        for (size_t x = 0; x < width; ++x) {
-            if (!convert_slow(in_ptr, out_ptr, x, y))
-                return false;
+        for (size_t y = 0; y < height; ++y) {
+            for (size_t x = 0; x < width; ++x) {
+                if (!convert_fallback(in_ptr, out_ptr, x, y))
+                    return false;
 
-            in_ptr += in_size;
-            out_ptr += out_size;
+                in_ptr += in_size;
+                out_ptr += out_size;
+            }
         }
+        return true;
     }
-
-    return true;
 }
 
-bool Converter::convert_slow(const uint8_t *in, uint8_t *out, size_t x, size_t y) const {
+bool Converter::convert_fallback(const uint8_t *in, uint8_t *out, size_t x, size_t y) const {
     (void) x; (void) y;
 
     Temp temp;
     for (auto [i_in, i_out] : m_plan) {
         if (i_in != None) {
-            const Field &f = m_in[i_in];
-            memcpy(&temp.value, in + f.offset, size(f.type));
-            temp.type = f.type;
-            temp.gamma = f.flags & Flag::Gamma;
+            const Field &fi = m_in[i_in];
+            memcpy(&temp.value, in + fi.offset, size(fi.type));
+            temp.type = fi.type;
+            temp.gamma = fi.flags & Flag::Gamma;
 
             if (m_in.byte_order() != native_byte_order())
                 bswap((uint8_t *) &temp.value, size(temp.type));
 
             // Ensure that the input value matches the specfied value
-            if (f.flags & Flag::Check) {
-                if (memcmp(&temp.value, &f.value, size(temp.type)) != 0)
+            if (fi.flags & Flag::Check) {
+                if (memcmp(&temp.value, &fi.value, size(temp.type)) != 0)
                     return false;
             }
 
-            bool normalize = f.flags & Flag::Normalized,
+            bool normalized = fi.flags & Flag::Normalized,
                  requires_conversion = false;
 
             if (i_out != None) {
@@ -228,31 +239,33 @@ bool Converter::convert_slow(const uint8_t *in, uint8_t *out, size_t x, size_t y
                 requires_conversion =
                     requires_conversion || fo.type != temp.type ||
                     (fo.flags & Flag::Gamma) != temp.gamma ||
-                    fo.flags & Flag::Normalized;
+                    (fo.flags & Flag::Normalized) != normalized;
             }
 
             if (requires_conversion)
                 convert_scalar(
                     temp, size(temp.type) >= 4 ? Type::Float64 : Type::Float32,
-                    normalize);
+                    normalized);
         } else {
             // Input field is missing, substitute a default
-            const Field &f = m_out[i_out];
-            memcpy(&temp.value, &f.value, size(f.type));
-            temp.type = f.type;
+            const Field &fo = m_out[i_out];
+            memcpy(&temp.value, &fo.value, size(fo.type));
+            temp.type = fo.type;
+            temp.gamma = fo.flags & Flag::Gamma;
         }
 
-        if (i_out != None) {
-            const Field &f = m_out[i_out];
+        if (i_out == None)
+            continue;
 
-            if (f.type != temp.type)
-                convert_scalar(temp, f.type, f.flags & Flag::Normalized);
+        const Field &fo = m_out[i_out];
 
-            if (m_out.byte_order() != native_byte_order())
-                bswap((uint8_t *) &temp.value, size(f.type));
+        if (fo.type != temp.type)
+            convert_scalar(temp, fo.type, fo.flags & Flag::Normalized);
 
-            memcpy(out + f.offset, &temp.value, size(f.type));
-        }
+        if (m_out.byte_order() != native_byte_order())
+            bswap((uint8_t *) &temp.value, size(fo.type));
+
+        memcpy(out + fo.offset, &temp.value, size(fo.type));
     }
     return true;
 }
