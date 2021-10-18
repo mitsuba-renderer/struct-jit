@@ -36,7 +36,7 @@ def check_conversion(conv, src_fmt, dst_fmt, data_in,
     ref = data_out if data_out is not None else data_in
     for i in range(len(dst_data)):
         abs_err = float(dst_data[i]) - float(ref[i])
-        assert np.abs(abs_err / (ref[i] + 1e-6)) < err_thresh
+        assert np.abs(abs_err / (ref[i] + err_thresh)) < err_thresh
 
 
 def test01_append_inspect():
@@ -101,19 +101,26 @@ def test05_roundtrip_normalized(source, dest, jit):
 
     s12 = sj.Converter(s1, s2, jit=jit)
     s21 = sj.Converter(s2, s1, jit=jit)
-
-    values_in = list(range(10))
-    if sj.is_signed(source[1]):
-        values_in += list(range(-10, 0))
     max_range = sj.range(source[1])[1]
+
+    if dest[1] != sj.Type.Float16:
+        values_in = list(range(10))
+        err_thresh = 1e-6
+    else:
+        values_in = [int(max_range/10)*i for i in range(10)]
+        err_thresh = 1e-3
+
+    if sj.is_signed(source[1]):
+        values_in += [-k for k in values_in]
+
     values_out = [i / max_range for i in values_in]
 
     print("%s -> %s" % (str(source[1]), str(dest[1])))
     check_conversion(s12, '@' + source[0] * len(values_in),
                           '@' + dest[0] * len(values_out),
-                          values_in, values_out)
+                          values_in, values_out, err_thresh)
 
     print("%s -> %s" % (str(dest[1]), str(source[1])))
     check_conversion(s21, '@' + dest[0] * len(values_out),
                           '@' + source[0] * len(values_in),
-                          values_out, values_in)
+                          values_out, values_in, err_thresh)
