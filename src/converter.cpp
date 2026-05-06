@@ -1,118 +1,144 @@
 #include <struct-jit/struct-jit.h>
+#include "transfer.h"
 #include <stdexcept>
 #include <cstring>
 #include <cmath>
+#include <utility>
 
-#if defined(__GNUC__)
+#if defined(_MSC_VER)
+#  define SJIT_UNREACHABLE() __assume(0)
+#elif defined(__GNUC__) || defined(__clang__)
+#  define SJIT_UNREACHABLE() __builtin_unreachable()
+#else
+#  define SJIT_UNREACHABLE() raise("struct_jit: unreachable code reached!")
+#endif
+
+#if defined(__clang__)
+// This warning flag is Clang-specific; GCC does not recognize it (and does not
+// warn here under -Wall -Wextra), so guard on __clang__ rather than __GNUC__.
 #  pragma GCC diagnostic ignored "-Wimplicit-int-float-conversion"
 #endif
 
 #include "half.h"
+#include "srgb.h"
+#include "dither.h"
+#include <tsl/robin_map.h>
+#include <functional>
+#include <memory>
+#include <mutex>
 
 NAMESPACE_BEGIN(struct_jit)
 
-/// Convenience wrapper to raise an exception
-static void raise(const std::string &msg) { throw std::runtime_error(msg); }
-
-/// Indicates a missing source/destination field
-constexpr size_t None = size_t(-1);
-
-static void verify_flags(const Struct &s) {
-    for (size_t i = 0; i < s.fields(); ++i) {
-        const Field &f = s[i];
-        if (f.flags & Flag::Normalized) {
-            if (is_float(f.type))
-                raise("struct_jit::verify_flags(\"" + f.name +
-                      "\"): 'Normalized' flag requires an integral field!");
-        }
-
-        if (f.flags & Flag::Gamma) {
-            if (!(f.flags & Flag::Normalized))
-                raise("struct_jit::verify_flags(\"" + f.name +
-                      "\"): 'Gamma' flag requires that 'Normalized' is also "
-                      "specified!");
-        }
-
-        if ((f.flags & Flag::Check) && (f.flags & Flag::Default)) {
-            raise("struct_jit::verify_flags(\"" + f.name +
-                  "\"): 'Check' and 'Default' flags cannot be specified at the "
-                  "same time!");
-        }
-    }
-}
-
-
+/// Mutable scratch register holding a single scalar value as it is loaded,
+/// numerically converted, and stored by the software fallback path.
 struct Temp {
     Type type = Type::Invalid;
     uint64_t value = 0;
-    bool gamma = false;
 };
 
+/// Reverse the byte order of a `size`-byte value in place (endianness swap).
 static void bswap(uint8_t *data, size_t size) {
-    for (size_t i = 0; i < size / 2; ++i)
-        std::swap(data[i], data[size - 1 - i]);
+    // `size` is always the width of a scalar field (<= 8). Telling the compiler
+    // this keeps GCC's -O3 loop analysis from mis-bounding the swap and emitting
+    // a spurious -Wstringop-overflow on the small stack buffers passed in here.
+    if (size > 8)
+        SJIT_UNREACHABLE();
+    for (size_t i = 0; i < size / 2; ++i) {
+        uint8_t t = data[i];
+        data[i] = data[size - 1 - i];
+        data[size - 1 - i] = t;
+    }
 }
 
+// ----------------------------------------------------------------------------
+// Software fallback: a portable scalar converter used when no JIT backend is
+// available (or when the user requests `jit=false`). It mirrors the semantics
+// of the generated kernel so both paths produce identical results.
+// ----------------------------------------------------------------------------
+
 template <typename Target, typename Source>
-static void convert_scalar_3(void *ptr, bool norm) {
+static void convert_scalar_3(void *ptr, bool norm, double dither) {
     Source source;
     memcpy(&source, ptr, sizeof(Source));
 
+    // Float -> int: scale into the integer domain, add dither, round to nearest
+    // (ties-to-even), then saturate to the destination range, all in the source
+    // (= working) precision so the result matches the JIT bit-for-bit, including
+    // at single precision. (half is never the working type; promote it to float
+    // so this dead instantiation compiles.)
     if constexpr (!std::is_integral_v<Source> && std::is_integral_v<Target>) {
+        using F = std::conditional_t<std::is_same_v<Source, half>, float, Source>;
+        F v = (F) source;
         if (norm)
-            source = Source(std::rint(double(source) * std::numeric_limits<Target>::max()));
+            v *= (F) std::numeric_limits<Target>::max();
+        v = std::rint(v + (F) dither);
+
+        // Clamp before the (truncating) cast, mirroring the JIT's min_f/max_f.
+        // Both types are known here, so the bounds fold to compile-time constants.
+        constexpr std::pair<double, double> b = int_clamp_bounds<Target, F>();
+        if (v < (F) b.first)  v = (F) b.first;
+        if (v > (F) b.second) v = (F) b.second;
+        source = (Source) v;
     }
 
     Target target = (Target) source;
 
+    // Int -> float: normalize by multiplying with the reciprocal of the source
+    // range, in the target (= working) precision, as the JIT's scale snippet does.
     if constexpr (std::is_integral_v<Source> && !std::is_integral_v<Target>) {
-        if (norm)
-            target = Target(double(target) / std::numeric_limits<Source>::max());
+        if (norm) {
+            using F = std::conditional_t<std::is_same_v<Target, half>, float, Target>;
+            target = (Target) ((F) target * (F) (1.0 / (double) std::numeric_limits<Source>::max()));
+        }
     }
 
     memcpy(ptr, &target, sizeof(Target));
 }
 
-template <typename Target> static void convert_scalar_2(Temp &t, bool norm) {
+template <typename Target> static void convert_scalar_2(Temp &t, bool norm, double dither) {
     void *d = &t.value;
     switch (t.type) {
-        case Type::Int8:    convert_scalar_3<Target, int8_t>   (d, norm); break;
-        case Type::UInt8:   convert_scalar_3<Target, uint8_t>  (d, norm); break;
-        case Type::Int16:   convert_scalar_3<Target, int16_t>  (d, norm); break;
-        case Type::UInt16:  convert_scalar_3<Target, uint16_t> (d, norm); break;
-        case Type::Int32:   convert_scalar_3<Target, int32_t>  (d, norm); break;
-        case Type::UInt32:  convert_scalar_3<Target, uint32_t> (d, norm); break;
-        case Type::Int64:   convert_scalar_3<Target, int64_t>  (d, norm); break;
-        case Type::UInt64:  convert_scalar_3<Target, uint64_t> (d, norm); break;
-        case Type::Float16: convert_scalar_3<Target, half>     (d, norm); break;
-        case Type::Float32: convert_scalar_3<Target, float>    (d, norm); break;
-        case Type::Float64: convert_scalar_3<Target, double>   (d, norm); break;
+        case Type::Int8:    convert_scalar_3<Target, int8_t>   (d, norm, dither); break;
+        case Type::UInt8:   convert_scalar_3<Target, uint8_t>  (d, norm, dither); break;
+        case Type::Int16:   convert_scalar_3<Target, int16_t>  (d, norm, dither); break;
+        case Type::UInt16:  convert_scalar_3<Target, uint16_t> (d, norm, dither); break;
+        case Type::Int32:   convert_scalar_3<Target, int32_t>  (d, norm, dither); break;
+        case Type::UInt32:  convert_scalar_3<Target, uint32_t> (d, norm, dither); break;
+        case Type::Int64:   convert_scalar_3<Target, int64_t>  (d, norm, dither); break;
+        case Type::UInt64:  convert_scalar_3<Target, uint64_t> (d, norm, dither); break;
+        case Type::Float16: convert_scalar_3<Target, half>     (d, norm, dither); break;
+        case Type::Float32: convert_scalar_3<Target, float>    (d, norm, dither); break;
+        case Type::Float64: convert_scalar_3<Target, double>   (d, norm, dither); break;
         default:
             raise("struct_jit::convert_scalar(): invalid Target type!");
     }
 }
 
-static void convert_scalar(Temp &t, Type target, bool norm) {
+static void convert_scalar(Temp &t, Type target, bool norm, double dither = 0.0) {
     switch (target) {
-        case Type::Int8:    convert_scalar_2<int8_t>   (t, norm); break;
-        case Type::UInt8:   convert_scalar_2<uint8_t>  (t, norm); break;
-        case Type::Int16:   convert_scalar_2<int16_t>  (t, norm); break;
-        case Type::UInt16:  convert_scalar_2<uint16_t> (t, norm); break;
-        case Type::Int32:   convert_scalar_2<int32_t>  (t, norm); break;
-        case Type::UInt32:  convert_scalar_2<uint32_t> (t, norm); break;
-        case Type::Int64:   convert_scalar_2<int64_t>  (t, norm); break;
-        case Type::UInt64:  convert_scalar_2<uint64_t> (t, norm); break;
-        case Type::Float16: convert_scalar_2<half>     (t, norm); break;
-        case Type::Float32: convert_scalar_2<float>    (t, norm); break;
-        case Type::Float64: convert_scalar_2<double>   (t, norm); break;
+        case Type::Int8:    convert_scalar_2<int8_t>   (t, norm, dither); break;
+        case Type::UInt8:   convert_scalar_2<uint8_t>  (t, norm, dither); break;
+        case Type::Int16:   convert_scalar_2<int16_t>  (t, norm, dither); break;
+        case Type::UInt16:  convert_scalar_2<uint16_t> (t, norm, dither); break;
+        case Type::Int32:   convert_scalar_2<int32_t>  (t, norm, dither); break;
+        case Type::UInt32:  convert_scalar_2<uint32_t> (t, norm, dither); break;
+        case Type::Int64:   convert_scalar_2<int64_t>  (t, norm, dither); break;
+        case Type::UInt64:  convert_scalar_2<uint64_t> (t, norm, dither); break;
+        case Type::Float16: convert_scalar_2<half>     (t, norm, dither); break;
+        case Type::Float32: convert_scalar_2<float>    (t, norm, dither); break;
+        case Type::Float64: convert_scalar_2<double>   (t, norm, dither); break;
         default:
             raise("struct_jit::convert_scalar(): invalid target type!");
     }
     t.type = target;
 }
 
-Converter::Converter(const Struct &in, const Struct &out, bool jit)
-    : m_in(in), m_out(out), m_kernel(nullptr), m_kernel_size(0) {
+Converter::Converter(const Struct &in, const Struct &out, bool jit, bool dither,
+                     Type working_precision)
+    : m_in(in), m_out(out), m_dither(dither), m_working(working_precision),
+      m_kernel(nullptr), m_kernel_size(0) {
+    if (working_precision != Type::Float32 && working_precision != Type::Float64)
+        raise("Converter(): working_precision must be Float32 or Float64!");
     create_plan();
     if (jit)
         create_kernel();
@@ -123,152 +149,426 @@ Converter::~Converter() {
         release_kernel();
 }
 
+Converter::Converter(Converter &&c) noexcept
+    : m_in(std::move(c.m_in)),
+      m_out(std::move(c.m_out)),
+      m_plan(std::move(c.m_plan)),
+      m_weight_divide(c.m_weight_divide),
+      m_weight_in(c.m_weight_in),
+      m_alpha_apply(c.m_alpha_apply),
+      m_alpha_in(c.m_alpha_in),
+      m_blend(std::move(c.m_blend)),
+      m_dither(c.m_dither),
+      m_working(c.m_working),
+      m_kernel(c.m_kernel),
+      m_kernel_size(c.m_kernel_size) {
+    c.m_kernel = nullptr;
+    c.m_kernel_size = 0;
+}
 
-/**
- * Analyze the input data and output data structure and prepare a list of
- * fields that should be visited.
- */
-void Converter::create_plan() {
-    size_t weight_in = None, weight_out = None;
+Converter &Converter::operator=(Converter &&c) noexcept {
+    if (this == &c)
+        return *this;
 
-    verify_flags(m_in);
-    verify_flags(m_out);
+    if (m_kernel)
+        release_kernel();
 
-    // Check whether the input data structure has a (single) weight field.
-    for (size_t i = 0; i < m_in.fields(); ++i) {
-        const Field &f = m_in[i];
+    m_in = std::move(c.m_in);
+    m_out = std::move(c.m_out);
+    m_plan = std::move(c.m_plan);
+    m_weight_divide = c.m_weight_divide;
+    m_weight_in = c.m_weight_in;
+    m_alpha_apply = c.m_alpha_apply;
+    m_alpha_in = c.m_alpha_in;
+    m_blend = std::move(c.m_blend);
+    m_dither = c.m_dither;
+    m_working = c.m_working;
+    m_kernel = c.m_kernel;
+    m_kernel_size = c.m_kernel_size;
 
-        if (has_flag(f.flags, Flag::Weight)) {
-            if (weight_in != None)
-                raise("Converter::create_plan(): the input data structure "
-                      "contains multiple weight fields!");
-            weight_in = i;
-        }
+    c.m_kernel = nullptr;
+    c.m_kernel_size = 0;
+    return *this;
+}
+
+static void hash_combine(size_t &seed, size_t value) {
+    seed ^= value + 0x9e3779b97f4a7c15ull + (seed << 6) + (seed >> 2);
+}
+
+static size_t hash_value_bits(uint64_t value, Type type) {
+    return std::hash<uint64_t>()(canonical_value(value, type));
+}
+
+static size_t hash_field(const Field &field) {
+    size_t result = 0;
+    hash_combine(result, std::hash<std::string>()(field.name));
+    hash_combine(result, std::hash<uint32_t>()((uint32_t) field.type));
+    hash_combine(result, std::hash<size_t>()(field.offset));
+    hash_combine(result, std::hash<uint32_t>()(field.flags));
+    hash_combine(result, hash_value_bits(field.value, field.type));
+    for (const auto &term : field.blend) {
+        hash_combine(result, std::hash<double>()(term.first));
+        hash_combine(result, std::hash<std::string>()(term.second));
+    }
+    return result;
+}
+
+static size_t hash_struct(const Struct &s) {
+    size_t result = 0;
+    hash_combine(result, std::hash<bool>()(s.pack()));
+    hash_combine(result, std::hash<uint32_t>()((uint32_t) s.byte_order()));
+    hash_combine(result, std::hash<size_t>()(s.size()));
+    for (const Field &field : s)
+        hash_combine(result, hash_field(field));
+    return result;
+}
+
+struct ConverterCacheKey {
+    Struct in;
+    Struct out;
+    bool jit;
+    bool dither;
+    Type working_precision;
+
+    bool operator==(const ConverterCacheKey &other) const {
+        return in == other.in &&
+               out == other.out &&
+               jit == other.jit &&
+               dither == other.dither &&
+               working_precision == other.working_precision;
+    }
+};
+
+struct ConverterCacheKeyHash {
+    size_t operator()(const ConverterCacheKey &key) const {
+        size_t result = 0;
+        hash_combine(result, hash_struct(key.in));
+        hash_combine(result, hash_struct(key.out));
+        hash_combine(result, std::hash<bool>()(key.jit));
+        hash_combine(result, std::hash<bool>()(key.dither));
+        hash_combine(result, std::hash<uint32_t>()((uint32_t) key.working_precision));
+        return result;
+    }
+};
+
+namespace {
+
+class ConverterCache {
+public:
+    const Converter &get(const Struct &in, const Struct &out, bool jit,
+                         bool dither, Type working_precision) {
+        std::lock_guard<std::mutex> lock(m_mutex);
+
+        ConverterCacheKey key { in, out, jit, dither, working_precision };
+        auto it = m_entries.find(key);
+        if (it != m_entries.end())
+            return *it->second;
+
+        std::unique_ptr<Converter> converter(
+            new Converter(in, out, jit, dither, working_precision));
+        const Converter &result = *converter;
+        m_entries.emplace(std::move(key), std::move(converter));
+        return result;
     }
 
-    for (size_t i = 0; i < m_out.fields(); ++i) {
-        const Field &f = m_out[i];
-        bool is_weight = has_flag(f.flags, Flag::Weight);
+    void clear() {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_entries.clear();
+    }
 
-        // Check whether the output data structure has a (single) weight field.
-        if (is_weight) {
-            if (weight_out != None)
-                raise("Converter::create_plan(): the output data structure "
-                      "contains multiple weight fields!");
-            weight_out = i;
+private:
+    mutable std::mutex m_mutex;
+    tsl::robin_map<ConverterCacheKey, std::unique_ptr<Converter>,
+                   ConverterCacheKeyHash> m_entries;
+};
+
+static ConverterCache &shared_converter_cache() {
+    static ConverterCache cache;
+    return cache;
+}
+
+} // namespace
+
+const Converter &make_converter(const Struct &in, const Struct &out, bool jit,
+                                bool dither, Type working_precision) {
+    return shared_converter_cache().get(in, out, jit, dither,
+                                        working_precision);
+}
+
+void clear_cache() { shared_converter_cache().clear(); }
+
+
+/// Locate the single field carrying \c flag in \c s, raising on duplicates when
+/// \c unique is set. Returns \ref None if absent; sets \c multiple when more than
+/// one match exists (used for the alpha "multiple channels" diagnostic).
+static size_t find_flagged(const Struct &s, Flag flag, const char *what,
+                           bool unique, bool *multiple = nullptr) {
+    size_t result = None;
+    for (size_t i = 0; i < s.size(); ++i) {
+        if (!has_flag(s[i].flags, flag))
+            continue;
+        if (result != None) {
+            if (unique)
+                raise(std::string("Converter::create_plan(): the data structure "
+                                  "contains multiple ") + what + " fields!");
+            if (multiple)
+                *multiple = true;
+        } else {
+            result = i;
+        }
+    }
+    return result;
+}
+
+void Converter::create_plan() {
+    m_in.validate();
+    m_out.validate();
+
+    // ---- Weight fields (at most one per structure) ----
+    size_t weight_in  = find_flagged(m_in,  Flag::Weight, "weight", true),
+           weight_out = find_flagged(m_out, Flag::Weight, "weight", true);
+    if (weight_in != None && weight_out != None &&
+        m_in[weight_in].name != m_out[weight_out].name)
+        raise("Converter::create_plan(): the weight fields of the input (\"" +
+              m_in[weight_in].name + "\") and output (\"" +
+              m_out[weight_out].name + "\") data structure have mismatched names!");
+
+    // Converting weighted -> unweighted (input weighted, output not) divides
+    // every mapped field by the weight; the backend loads it up front.
+    m_weight_divide = weight_in != None && weight_out == None;
+    m_weight_in = m_weight_divide ? weight_in : None;
+
+    // ---- Alpha fields ----
+    bool alpha_in_multiple = false;
+    size_t alpha_in  = find_flagged(m_in,  Flag::Alpha, "alpha", false, &alpha_in_multiple),
+           alpha_out = find_flagged(m_out, Flag::Alpha, "alpha", false);
+    if (alpha_in != None && alpha_out != None &&
+        m_in[alpha_in].name != m_out[alpha_out].name)
+        raise("Converter::create_plan(): the alpha fields of the input (\"" +
+              m_in[alpha_in].name + "\") and output (\"" +
+              m_out[alpha_out].name + "\") data structure have mismatched names!");
+    m_alpha_apply = alpha_in != None && alpha_out != None;
+    m_alpha_in = m_alpha_apply ? alpha_in : None;
+
+    // ---- Per-output-field plan ----
+    bool any_premult_conv = false;
+    for (size_t i = 0; i < m_out.size(); ++i) {
+        const Field &f = m_out[i];
+
+        // Blended output: resolve each term's source field by name. The result
+        // is a linear combination computed in the working precision (see the
+        // backends); blend fields bypass the normal name lookup and alpha.
+        if (!f.blend.empty()) {
+            BlendEntry be;
+            be.output = i;
+            for (const std::pair<double, std::string> &term : f.blend) {
+                Struct::ConstFieldIterator it = m_in.find(term.second);
+                if (it == m_in.end())
+                    raise("Converter::create_plan(): the blend source field \"" +
+                          term.second + "\" (for output \"" + f.name +
+                          "\") could not be found in the input.");
+                be.terms.emplace_back((size_t) (it - m_in.begin()), term.first);
+            }
+            m_blend.push_back(std::move(be));
+            continue;
         }
 
         Struct::ConstFieldIterator it = m_in.find(f.name);
-
-        if (it != m_in.end()) {
-            if (!is_weight)
-                m_plan.emplace_back(it - m_in.begin(), i);
-        } else if (has_flag(f.flags, Flag::Default)) {
-            if (!is_weight)
-                m_plan.emplace_back(None, i);
-        } else {
+        std::pair<size_t, size_t> entry;
+        if (it != m_in.end())
+            entry = { (size_t) (it - m_in.begin()), i };
+        else if (has_flag(f.flags, Flag::Default))
+            entry = { None, i };
+        else
             raise("Converter::create_plan(): the output data structure "
                   "contains a field with name \"" + f.name +
                   "\" that could not be found in the input, and which lacks a "
                   "default initialization.");
+
+        m_plan.push_back(entry);
+
+        // Only needed to police the multiple-alpha rule below, so skip the work
+        // unless there actually is more than one alpha channel to disambiguate.
+        if (m_alpha_apply && alpha_in_multiple) {
+            Transfer t = make_transfer(m_in, m_out, entry, m_working,
+                                       m_weight_divide, true);
+            any_premult_conv |= t.alpha_premul || t.alpha_unpremul;
         }
     }
 
-    if (weight_in != None || weight_out != None) {
-        if (weight_in != None && weight_out != None) {
-            const Field &fi = m_in[weight_in],
-                        &fo = m_out[weight_out];
-
-            if (fi.name != fo.name)
-                raise("Converter::create_plan(): the weight fields of the input (\"" +
-                      fi.name + "\") and output (\"" + fo.name +
-                      "\") data structure have mismatched names!");
-        }
-
-        m_plan.insert(m_plan.begin(), std::make_pair(weight_in, weight_out));
-    }
+    // Only reject multiple alpha channels when a premultiplication conversion
+    // would actually consume one (a single alpha is then ambiguous).
+    if (m_alpha_apply && alpha_in_multiple && any_premult_conv)
+        raise("Converter::create_plan(): multiple alpha channels found; alpha "
+              "(un)premultiplication requires a single alpha channel!");
 }
 
 bool Converter::convert(const void *in, void *out, size_t width,
                         size_t height) const {
-    if (m_kernel) {
-        return m_kernel(in, out, width, height);
-    } else {
-        const uint8_t *in_ptr = (const uint8_t *) in;
-        uint8_t *out_ptr = (uint8_t *) out;
-        size_t in_size = m_in.size(), out_size = m_out.size();
-
-        for (size_t y = 0; y < height; ++y) {
-            for (size_t x = 0; x < width; ++x) {
-                if (!convert_fallback(in_ptr, out_ptr, x, y))
-                    return false;
-
-                in_ptr += in_size;
-                out_ptr += out_size;
-            }
-        }
+    // Nothing to do for an empty region. This also shields the JIT kernel,
+    // whose loops test the counter after the body (do-while), from running a
+    // spurious iteration and then wrapping around for a zero extent.
+    if (width == 0 || height == 0)
         return true;
-    }
+
+    if (m_kernel)
+        return m_kernel(in, out, width, height);
+    else
+        return convert_fallback((const uint8_t *) in, (uint8_t *) out, width, height);
 }
 
-bool Converter::convert_fallback(const uint8_t *in, uint8_t *out, size_t x, size_t y) const {
-    (void) x; (void) y;
+bool Converter::convert_fallback(const uint8_t *in, uint8_t *out, size_t width, size_t height) const {
+    return m_working == Type::Float32 ? convert_fallback_impl<float>(in, out, width, height)
+                                      : convert_fallback_impl<double>(in, out, width, height);
+}
+
+template <typename Float>
+bool Converter::convert_fallback_impl(const uint8_t *in_base, uint8_t *out_base,
+                                      size_t width, size_t height) const {
+    size_t in_size = m_in.nbytes(), out_size = m_out.nbytes();
+
+    // Resolve every plan entry into its shared Transfer recipe once, up front:
+    // the recipe is identical for every record, so there is no need to rebuild
+    // it per pixel (the JIT likewise resolves it a single time, at compile time).
+    std::vector<Transfer> transfers;
+    transfers.reserve(m_plan.size());
+    for (const std::pair<size_t, size_t> &entry : m_plan)
+        transfers.push_back(make_transfer(m_in, m_out, entry, m_working,
+                                           m_weight_divide, m_alpha_apply));
 
     Temp temp;
-    for (auto [i_in, i_out] : m_plan) {
-        if (i_in != None) {
-            const Field &fi = m_in[i_in];
-            memcpy(&temp.value, in + fi.offset, size(fi.type));
-            temp.type = fi.type;
-            temp.gamma = fi.flags & Flag::Gamma;
 
-            if (m_in.byte_order() != native_byte_order())
-                bswap((uint8_t *) &temp.value, size(temp.type));
+    // Record cursor and pixel coordinates shared with the lambdas below; updated
+    // as the loop walks the (row-major, contiguous) input and output buffers.
+    const uint8_t *in = in_base;
+    uint8_t *out = out_base;
+    size_t x = 0, y = 0;
 
-            // Ensure that the input value matches the specfied value
-            if (fi.flags & Flag::Check) {
-                if (memcmp(&temp.value, &fi.value, size(temp.type)) != 0)
+    // The value is held in the working float precision \c Float between the
+    // input and output conversions; read/write it directly (no type dispatch).
+    auto read  = [&] { Float v; memcpy(&v, &temp.value, sizeof(Float)); return v; };
+    auto write = [&](Float v) { memcpy(&temp.value, &v, sizeof(Float)); };
+
+    // Load a source field and linearize it to the working precision: read,
+    // byte-swap, int->float (with normalization), float precision adjust, and
+    // sRGB decode. Shared by the weight/alpha preamble and the blend terms.
+    auto load_linearized = [&](const Field &fi) -> Float {
+        Temp tmp;
+        memcpy(&tmp.value, in + fi.offset, type_size(fi.type));
+        tmp.type = fi.type;
+        if (m_in.byte_order() != native_byte_order())
+            bswap((uint8_t *) &tmp.value, type_size(tmp.type));
+        convert_scalar(tmp, m_working, has_flag(fi.flags, Flag::Normalized));
+        Float v;
+        memcpy(&v, &tmp.value, sizeof(Float));
+        if (has_flag(fi.flags, Flag::Gamma))
+            v = srgb_to_linear(v);
+        return v;
+    };
+
+    // Store the current \c temp into an output field: sRGB encode (if the value
+    // is a linear working float), convert (with dither on float->int), byte-swap,
+    // write. Shared by the value-field tail and the blend outputs; the JIT mirror
+    // is emit_store_working().
+    auto finish_output = [&](const Field &fo, bool gamma_encode) {
+        if (gamma_encode)
+            write(linear_to_srgb(read()));
+        if (fo.type != temp.type) {
+            double dither = 0.0;
+            if (m_dither && type_is_float(temp.type) && !type_is_float(fo.type))
+                dither = dither_matrix256[(y % 256) * 256 + (x % 256)];
+            convert_scalar(temp, fo.type, has_flag(fo.flags, Flag::Normalized), dither);
+        }
+        if (m_out.byte_order() != native_byte_order())
+            bswap((uint8_t *) &temp.value, type_size(fo.type));
+        memcpy(out + fo.offset, &temp.value, type_size(fo.type));
+    };
+
+    for (y = 0; y < height; ++y) {
+        for (x = 0; x < width; ++x) {
+            // Up front (like the JIT): verify every Check-flagged input field
+            // against its expected raw value, independent of the conversion
+            // plan, so input-only check fields are covered. A mismatch fails the
+            // whole conversion.
+            for (size_t i = 0; i < m_in.size(); ++i) {
+                const Field &fi = m_in[i];
+                if (!has_flag(fi.flags, Flag::Check))
+                    continue;
+                uint64_t raw = 0;
+                memcpy(&raw, in + fi.offset, type_size(fi.type));
+                if (m_in.byte_order() != native_byte_order())
+                    bswap((uint8_t *) &raw, type_size(fi.type));
+                if (memcmp(&raw, &fi.value, type_size(fi.type)) != 0)
                     return false;
             }
 
-            bool normalized = fi.flags & Flag::Normalized,
-                 requires_conversion = false;
-
-            if (i_out != None) {
-                const Field &fo = m_out[i_out];
-                requires_conversion =
-                    requires_conversion || fo.type != temp.type ||
-                    (fo.flags & Flag::Gamma) != temp.gamma ||
-                    (fo.flags & Flag::Normalized) != normalized;
+            // Preamble (per record, before any field is written): the weight
+            // reciprocal (1 if zero; NaN propagates) and the alpha / inverse alpha.
+            Float weight_recip = 1, alpha = 1, inv_alpha = 1;
+            if (m_weight_divide) {
+                Float w = load_linearized(m_in[m_weight_in]);
+                weight_recip = w == Float(0) ? Float(1) : Float(1) / w;
+            }
+            if (m_alpha_apply) {
+                alpha = load_linearized(m_in[m_alpha_in]);
+                inv_alpha = alpha == Float(0) ? Float(0) : Float(1) / alpha;
             }
 
-            if (requires_conversion)
-                convert_scalar(
-                    temp, size(temp.type) >= 4 ? Type::Float64 : Type::Float32,
-                    normalized);
-        } else {
-            // Input field is missing, substitute a default
-            const Field &fo = m_out[i_out];
-            memcpy(&temp.value, &fo.value, size(fo.type));
-            temp.type = fo.type;
-            temp.gamma = fo.flags & Flag::Gamma;
-        }
+            for (const Transfer &t : transfers) {
+                if (t.input) {
+                    const Field &fi = *t.input;
+                    memcpy(&temp.value, in + fi.offset, type_size(fi.type));
+                    temp.type = fi.type;
 
-        if (i_out == None)
-            continue;
+                    if (m_in.byte_order() != native_byte_order())
+                        bswap((uint8_t *) &temp.value, type_size(temp.type));
 
-        const Field &fo = m_out[i_out];
+                    if (t.needs_conversion)
+                        convert_scalar(temp, t.working_type, t.input_normalized);
 
-        if (fo.type != temp.type)
-            convert_scalar(temp, fo.type, fo.flags & Flag::Normalized);
+                    if (t.gamma_decode)
+                        write(srgb_to_linear(read()));
+                } else {
+                    // Input field is missing; substitute the default value.
+                    const Field &fo = *t.output;
+                    memcpy(&temp.value, &fo.value, type_size(fo.type));
+                    temp.type = fo.type;
+                }
 
-        if (m_out.byte_order() != native_byte_order())
-            bswap((uint8_t *) &temp.value, size(fo.type));
+                // Weight division, then alpha (un)premultiplication.
+                if (t.weight_apply)
+                    write(read() * weight_recip);
+                if (t.alpha_premul)
+                    write(read() * alpha);
+                if (t.alpha_unpremul)
+                    write(read() * inv_alpha);
 
-        memcpy(out + fo.offset, &temp.value, size(fo.type));
-    }
+                finish_output(*t.output, t.gamma_encode);
+            }
+
+            // Blended outputs: sum the weighted, linearized source terms in the
+            // working precision, divide by the weight if requested, then store.
+            // Blend fields do not participate in alpha (un)premultiplication.
+            for (const BlendEntry &be : m_blend) {
+                Float accum = 0;
+                for (const std::pair<size_t, double> &term : be.terms)
+                    accum += (Float) term.second * load_linearized(m_in[term.first]);
+                if (m_weight_divide)
+                    accum *= weight_recip;
+                const Field &fo = m_out[be.output];
+                temp.type = m_working;
+                write(accum);
+                finish_output(fo, has_flag(fo.flags, Flag::Gamma));
+            }
+
+            in += in_size;
+            out += out_size;
+        } // x
+    } // y
     return true;
 }
 
 
 NAMESPACE_END(struct_jit)
+
+#undef SJIT_UNREACHABLE

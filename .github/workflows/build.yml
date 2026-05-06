@@ -7,15 +7,23 @@ on:
         description: 'Upload wheels to PyPI? (0: no, 1: yes)'
         required: true
         default: '0'
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
 
 env:
-  CIBW_SKIP: pp* cp27-* cp35-* cp38-macosx_arm64
+  CIBW_SKIP: cp38-macosx_arm64
   CIBW_MANYLINUX_X86_64_IMAGE: manylinux2014
   CIBW_MANYLINUX_AARCH64_IMAGE: manylinux2014
   CIBW_ARCHS_WINDOWS: auto64
   CIBW_ARCHS_LINUX: auto64
   CIBW_ARCHS_MACOS: x86_64 arm64
-  CIBW_BEFORE_BUILD_LINUX: yum install -y libatomic
+  MACOSX_DEPLOYMENT_TARGET: "11.0"
+  # Install libatomic if available (this fails on musllinux)
+  CIBW_BEFORE_BUILD_LINUX: yum install -y libatomic || apk add libatomic || true
+  CIBW_ENVIRONMENT_WINDOWS: CMAKE_GENERATOR=Ninja CC=clang-cl CXX=clang-cl ASM=clang-cl
+  CIBW_TEST_COMMAND: python -c "import numpy as np, struct_jit as sj; s1=sj.Struct().append('v', sj.Type.UInt8, sj.Flag.Normalized); s2=sj.Struct().append('v', sj.Type.Float32); out=sj.Converter(s1, s2).convert(np.array([255], dtype=np.uint8)); assert np.frombuffer(out, dtype=np.float32)[0] == 1.0"
 
 jobs:
   build_wheels:
@@ -23,37 +31,38 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-20.04, windows-latest, macos-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
       fail-fast: false
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v6
         with:
           submodules: recursive
 
-      - uses: actions/setup-python@v2
+      - uses: actions/setup-python@v6
         name: Install Python
         with:
-          python-version: '3.7'
+          python-version: '3.13'
 
       - name: Prepare compiler environment for Windows
         if: runner.os == 'Windows'
-        uses: ilammy/msvc-dev-cmd@v1.9.0
+        uses: ilammy/msvc-dev-cmd@v1.13.0
         with:
           arch: x64
 
       - name: Install cibuildwheel
         run: |
-          python -m pip install cibuildwheel==1.12.0
+          python -m pip install cibuildwheel==3.4.1
 
       - name: Build wheels
         run: |
           python -m cibuildwheel --output-dir wheelhouse
 
-      - uses: actions/upload-artifact@v2
+      - uses: actions/upload-artifact@v7
         with:
-          name: wheels
+          name: wheels-${{ matrix.os }}
           path: ./wheelhouse/*.whl
+          if-no-files-found: error
 
   upload_pypi:
     name: Build wheels and upload to PyPI
@@ -62,12 +71,13 @@ jobs:
     needs: [build_wheels]
 
     steps:
-      - uses: actions/download-artifact@v2
+      - uses: actions/download-artifact@v8
         with:
-          name: wheels
+          pattern: wheels-*
           path: dist
+          merge-multiple: true
 
-      - uses: pypa/gh-action-pypi-publish@master
+      - uses: pypa/gh-action-pypi-publish@v1.13.0
         with:
           user: __token__
           password: ${{ secrets.pypi_password }}

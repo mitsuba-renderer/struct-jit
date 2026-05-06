@@ -1,6 +1,6 @@
-[submodule "ext/pybind11"]
-    path = ext/pybind11
-    url = https://github.com/pybind/pybind11
 [submodule "ext/cmake-defaults"]
     path = ext/cmake-defaults
     url = https://github.com/mitsuba-renderer/cmake-defaults
+[submodule "ext/nanobind"]
+	path = ext/nanobind
+	url = https://github.com/wjakob/nanobind

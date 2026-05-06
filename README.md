@@ -32,7 +32,7 @@ extra fields with a default value (e.g. alpha channel).
 While hard-coding such a conversion for a specific type of input and output is
 easy, things quickly become messy when the format of the input data structure
 ``Source`` <em>only becomes known at runtime</em>. This is where Struct-JIT
-shines: it generates efficient code to performs the desired conversion on the
+shines: it generates efficient code to perform the desired conversion on the
 fly.
 
 Features
@@ -50,6 +50,11 @@ Struct-JIT deals with
 - <b>Dithering</b>: can apply dithering to avoid banding artifacts when
   producing output with low bit depth (e.g. 8 bit).
 - <b>Checks</b>: can check that certain entries have specified default values.
+- <b>Weighting</b>: a field can store an accumulation weight; converting to an
+  un-weighted structure divides the remaining fields by it.
+- <b>Alpha</b>: can convert between premultiplied and non-premultiplied alpha.
+- <b>Blending</b>: an output field can be a weighted linear combination of
+  several input fields.
 
 The library provides *C++* and *Python* (optional) interfaces to all
 functionality.
@@ -62,12 +67,25 @@ provide an efficient generic implementation of this functionality. For this
 reason, the implementation of this class relies on a JIT compiler that
 generates fast specialized conversion code for each specific conversion task.
 Generated kernels are cached in memory and reused. The JIT targets the two most
-widely architectures, specifically ``x86_64`` (Ivy Bridge or newer) and
+widely architectures, specifically ``x86_64`` (Haswell or newer, for FMA) and
 ``aarch64``.
 
 Due to the basic nature of the task, the JIT compiler admits a particularly
 simple and fast implementation that merely copies and pastes pre-compiled
 snippets to assemble the final conversion function.
+
+Applications that repeatedly encounter the same runtime layouts can use the
+shared converter cache instead of constructing converters each time:
+
+```cpp
+Converter &converter = make_converter(source_struct, target_struct);
+converter.convert(input, output, width, height);
+```
+
+Cache lookups and mutation are mutex-protected. Returned converter references
+remain valid until ``clear_cache()`` is called, so callers should not
+clear the shared cache while another thread may still use a previously returned
+converter.
 
 Finally, a slow software emulation mode is also available. Its main application
 is to validate the JIT implementation in testcases.

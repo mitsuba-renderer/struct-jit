@@ -13,3 +13,9 @@
 #define cc_postfix
 
 #include "asm_x64.S"
+
+// The snippets never require an executable stack; mark it so explicitly on ELF
+// to avoid the linker defaulting libstruct-jit to an executable stack.
+#if !defined(__APPLE__)
+.section .note.GNU-stack,"",@progbits
+#endif

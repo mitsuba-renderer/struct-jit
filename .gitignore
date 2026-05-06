@@ -2,7 +2,15 @@ asm/asm_x64_sysv.o
 asm/asm_x64_win.o
 libstruct-jit.so
 struct_jit_ext.cpython*
+struct_jit_ext.abi3.so
+*.dylib
 
+build/
+dist/
+wheelhouse/
+Testing/
+.cache/
+.pytest_cache/
 *.ninja
 *.cmake
 CMakeFiles

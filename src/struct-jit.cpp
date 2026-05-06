@@ -1,16 +1,62 @@
 #include <struct-jit/struct-jit.h>
+#include "type_info.h"
 #include <algorithm>
+#include <limits>
 #include <ostream>
-#include <cstring>
-#include <stdexcept>
+#include <sstream>
 
 NAMESPACE_BEGIN(struct_jit)
 
-[[noreturn]] static void raise(const std::string &msg) {
-    throw std::runtime_error(msg);
+static constexpr uint32_t ValidFieldFlags =
+    +Flag::Normalized |
+    +Flag::Gamma |
+    +Flag::Check |
+    +Flag::Default |
+    +Flag::Weight |
+    +Flag::Alpha |
+    +Flag::PremultipliedAlpha;
+
+static std::string format_hex(uint32_t value) {
+    std::ostringstream oss;
+    oss << "0x" << std::hex << value;
+    return oss.str();
 }
 
-ByteOrder native_byte_order() { return ByteOrder::LittleEndian; }
+static void validate_field_definition(const Field &f) {
+    if (f.name.empty())
+        raise("Struct::validate(): a field name must be specified!");
+    if (f.type == Type::Invalid)
+        raise("Struct::validate(): field \"" + f.name +
+              "\" has an invalid type!");
+
+    uint32_t unknown = f.flags & ~ValidFieldFlags;
+    if (unknown)
+        raise("Struct::validate(): field \"" + f.name +
+              "\" contains unknown flag bits (" + format_hex(unknown) + ")!");
+
+    if (has_flag(f.flags, Flag::Normalized) && type_is_float(f.type))
+        raise("Struct::validate(): field \"" + f.name +
+              "\" specifies 'Normalized', which requires an integral type!");
+
+    if (has_flag(f.flags, Flag::Gamma) &&
+        !has_flag(f.flags, Flag::Normalized))
+        raise("Struct::validate(): field \"" + f.name +
+              "\" specifies 'Gamma' without 'Normalized'!");
+
+    if (has_flag(f.flags, Flag::Check) && has_flag(f.flags, Flag::Default))
+        raise("Struct::validate(): field \"" + f.name +
+              "\" specifies mutually exclusive 'Check' and 'Default' flags!");
+
+    (void) field_end(f);
+}
+
+ByteOrder native_byte_order() {
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    return ByteOrder::BigEndian;
+#else
+    return ByteOrder::LittleEndian;
+#endif
+}
 
 Struct::Struct(bool pack, ByteOrder byte_order)
     : m_pack(pack), m_byte_order(byte_order) {
@@ -30,39 +76,44 @@ size_t Struct::align() const {
         return 1;
     size_t size = 1;
     for (const Field &field : m_fields)
-        size = std::max(size, (size_t) struct_jit::size(field.type));
+        size = std::max(size, type_size(field.type));
     return size;
 }
 
-size_t Struct::size() const {
+size_t Struct::nbytes() const {
     if (m_fields.empty())
         return 0;
-    const Field &last = m_fields[m_fields.size() - 1];
-    size_t size = last.offset + struct_jit::size(last.type);
+    size_t size = 0;
+    for (const Field &field : m_fields)
+        size = std::max(size, field_end(field));
     if (!m_pack) {
         size_t a = align();
+        if (size > std::numeric_limits<size_t>::max() - (a - 1))
+            raise("Struct::nbytes(): data structure size overflows!");
         size = (size + a - 1) / a * a;
     }
     return size;
 }
 
 Struct &Struct::append(const std::string &name, Type type, uint32_t flags, const void *value) {
-    Field f { name, type, 0, flags, 0 };
-    memcpy(&f.value, value, struct_jit::size(type));
+    if (type == Type::Invalid)
+        raise("Struct::append(): an invalid field type was specified!");
 
-    if (name.empty())
-        raise("Struct::append(): a field name must be specified!");
-    else if (contains(name))
+    Field f { name, type, 0, flags, 0, {} };
+    copy_value(f.value, value, type);
+    validate_field_definition(f);
+
+    if (contains(name))
         raise("Struct::append(): a field with the name \"" + name +
               "\" already exists!");
 
     if (!m_fields.empty()) {
         const Field &l = m_fields.back();
-        f.offset = l.offset + struct_jit::size(l.type);
+        f.offset = field_end(l);
     }
 
     if (!m_pack) {
-        size_t align = struct_jit::size(f.type);
+        size_t align = type_size(f.type);
         f.offset = (f.offset + align - 1) / align * align;
     }
 
@@ -70,18 +121,88 @@ Struct &Struct::append(const std::string &name, Type type, uint32_t flags, const
     return *this;
 }
 
-Struct &Struct::append(const Field &field) {
-    if (field.name.empty())
-        raise("Struct::append(): a field name must be specified!");
-    else if (contains(field.name))
+Struct &Struct::append(const Field &field_) {
+    Field field = field_;
+    validate_field_definition(field);
+
+    if (contains(field.name))
         raise("Struct::append(): a field with the name \"" + field.name +
               "\" already exists!");
 
-    m_fields.push_back(field);
+    field.value = canonical_value(field.value, field.type);
+
+    auto it = std::lower_bound(
+        m_fields.begin(),
+        m_fields.end(),
+        field.offset,
+        [](const Field &candidate, size_t offset) {
+            return candidate.offset < offset;
+        }
+    );
+
+    // Keep manually positioned fields sorted by offset so nbytes(), padding
+    // reporting, and later conversion planning all see one canonical layout.
+    if (it != m_fields.begin()) {
+        const Field &prev = *(it - 1);
+        if (field.offset < field_end(prev))
+            raise("Struct::append(): field \"" + field.name +
+                  "\" overlaps with field \"" + prev.name + "\"!");
+    }
+
+    if (it != m_fields.end()) {
+        if (field_end(field) > it->offset)
+            raise("Struct::append(): field \"" + field.name +
+                  "\" overlaps with field \"" + it->name + "\"!");
+    }
+
+    m_fields.insert(it, field);
     return *this;
 }
 
-Struct::FieldIterator Struct::find(const std::string &name) {
+void Struct::validate() const {
+    size_t prev_end = 0;
+    for (size_t i = 0; i < m_fields.size(); ++i) {
+        const Field &f = m_fields[i];
+        validate_field_definition(f);
+
+        for (size_t j = 0; j < i; ++j) {
+            if (m_fields[j].name == f.name)
+                raise("Struct::validate(): field name \"" + f.name +
+                      "\" appears more than once!");
+        }
+
+        size_t size = type_size(f.type),
+               end  = field_end(f);
+
+        if (i > 0 && f.offset < m_fields[i - 1].offset)
+            raise("Struct::validate(): fields must be sorted by offset!");
+
+        if (i > 0 && f.offset < prev_end)
+            raise("Struct::validate(): field \"" + f.name +
+                  "\" overlaps with field \"" + m_fields[i - 1].name + "\"!");
+
+        if (end > MaxRecordBytes)
+            raise("Struct::validate(): field \"" + f.name +
+                  "\" exceeds the maximum supported record size (" +
+                  std::to_string(MaxRecordBytes) + " bytes)!");
+
+        if (size > 1 && (f.offset % size) != 0 &&
+            f.offset > MaxUnalignedOffset)
+            raise("Struct::validate(): field \"" + f.name +
+                  "\" has an unaligned offset beyond the maximum shared backend "
+                  "limit (" + std::to_string(MaxUnalignedOffset) + " bytes)!");
+
+        prev_end = end;
+    }
+
+    size_t stride = nbytes();
+    if (stride > MaxRecordBytes)
+        raise("Struct::validate(): record stride exceeds the maximum supported "
+              "shared backend limit (" + std::to_string(MaxRecordBytes) +
+              " bytes)!");
+}
+
+Struct::FieldIterator Struct::find(std::string_view name) {
     return std::find_if(
         m_fields.begin(),
         m_fields.end(),
@@ -89,7 +210,7 @@ Struct::FieldIterator Struct::find(const std::string &name) {
     );
 }
 
-Struct::ConstFieldIterator Struct::find(const std::string &name) const {
+Struct::ConstFieldIterator Struct::find(std::string_view name) const {
     return std::find_if(
         m_fields.begin(),
         m_fields.end(),
@@ -97,35 +218,32 @@ Struct::ConstFieldIterator Struct::find(const std::string &name) const {
     );
 }
 
-bool Struct::contains(const std::string &name) const {
-    for (const Field &field : m_fields)
-        if (field.name == name)
-            return true;
-    return false;
+bool Struct::contains(std::string_view name) const {
+    return find(name) != end();
 }
 
 const Field &Struct::operator[](const std::string &name) const {
-    for (const Field &field : m_fields)
-        if (field.name == name)
-            return field;
+    auto it = find(name);
+    if (it != end())
+        return *it;
     raise("Struct::operator[]: unable to find entry \"" + name + "\"");
 }
 
 Field &Struct::operator[](const std::string &name) {
-    for (Field &field : m_fields)
-        if (field.name == name)
-            return field;
+    auto it = find(name);
+    if (it != end())
+        return *it;
     raise("Struct::operator[]: unable to find entry \"" + name + "\"");
 }
 
 std::ostream &operator<<(std::ostream &os, const Struct &v) {
     os << "Struct[" << std::endl;
-    for (size_t i = 0; i < v.fields(); ++i) {
+    for (size_t i = 0; i < v.size(); ++i) {
         const Field &f = v[i];
         os << "  " << f << std::endl;
 
-        size_t p0  = f.offset + struct_jit::size(f.type),
-               p1  = i + 1 < v.fields() ? v[i + 1].offset : v.size(),
+        size_t p0  = field_end(f),
+               p1  = i + 1 < v.size() ? v[i + 1].offset : v.nbytes(),
                pad = p1 - p0;
 
         if (pad > 0)
@@ -137,72 +255,30 @@ std::ostream &operator<<(std::ostream &os, const Struct &v) {
 
 // --------------------------------------------------------------------------
 
-bool is_signed_int(Type type) {
-    return type == Type::Int8  || type == Type::Int16 ||
-           type == Type::Int32 || type == Type::Int64;
+bool type_is_signed_int(Type type) {
+    return type_info(type).signed_integer;
 }
 
-bool is_unsigned_int(Type type) {
-    return type == Type::UInt8  || type == Type::UInt16 ||
-           type == Type::UInt32 || type == Type::UInt64;
+bool type_is_unsigned_int(Type type) {
+    return type_info(type).unsigned_integer;
 }
 
-bool is_float(Type type) {
-    return type == Type::Float16 || type == Type::Float32 || type == Type::Float64;
+bool type_is_float(Type type) {
+    return type_info(type).floating_point;
 }
 
-bool is_signed(Type type) {
-    return is_signed_int(type) || is_float(type);
+bool type_is_signed(Type type) {
+    const TypeInfo &info = type_info(type);
+    return info.signed_integer || info.floating_point;
 }
 
-size_t size(Type type) {
-    switch (type) {
-        case Type::Int8:
-        case Type::UInt8:   return 1;
-        case Type::Int16:
-        case Type::UInt16:
-        case Type::Float16: return 2;
-        case Type::Int32:
-        case Type::UInt32:
-        case Type::Float32: return 4;
-        case Type::Int64:
-        case Type::UInt64:
-        case Type::Float64: return 8;
-        default:
-            raise("size(): invalid field type!");
-    }
+size_t type_size(Type type) {
+    return type_info(type).size;
 }
 
-std::pair<double, double> range(Type type) {
-    std::pair<double, double> result;
-
-    #define COMPUTE_RANGE(key, type)                                      \
-        case key:                                                         \
-            result = std::make_pair(std::numeric_limits<type>::min(),     \
-                                    std::numeric_limits<type>::max());    \
-            break;
-
-    switch (type) {
-        COMPUTE_RANGE(Type::UInt8, uint8_t);
-        COMPUTE_RANGE(Type::Int8, int8_t);
-        COMPUTE_RANGE(Type::UInt16, uint16_t);
-        COMPUTE_RANGE(Type::Int16, int16_t);
-        COMPUTE_RANGE(Type::UInt32, uint32_t);
-        COMPUTE_RANGE(Type::Int32, int32_t);
-        COMPUTE_RANGE(Type::UInt64, uint64_t);
-        COMPUTE_RANGE(Type::Int64, int64_t);
-        COMPUTE_RANGE(Type::Float32, float);
-        COMPUTE_RANGE(Type::Float64, double);
-
-        case Type::Float16:
-            result = std::make_pair(-65504, 65504);
-            break;
-
-        default:
-            raise("Internal error: invalid field type");
-    }
-
-    return result;
+std::pair<double, double> type_range(Type type) {
+    const TypeInfo &info = type_info(type);
+    return { info.min_value, info.max_value };
 }
 
 // --------------------------------------------------------------------------
@@ -212,7 +288,8 @@ bool operator==(const Field &f1, const Field &f2) {
            f1.type == f2.type &&
            f1.offset == f2.offset &&
            f1.flags == f2.flags &&
-           memcmp(&f1.value, &f2.value, size(f1.type)) == 0;
+           f1.blend == f2.blend &&
+           memcmp(&f1.value, &f2.value, type_size(f1.type)) == 0;
 }
 
 bool operator!=(const Field &f1, const Field &f2) {
@@ -222,10 +299,10 @@ bool operator!=(const Field &f1, const Field &f2) {
 bool operator==(const Struct &s1, const Struct &s2) {
     if (s1.pack() != s2.pack() ||
         s1.byte_order() != s2.byte_order() ||
-        s1.fields() != s2.fields())
+        s1.size() != s2.size())
         return false;
 
-    for (size_t i = 0; i < s1.fields(); ++i) {
+    for (size_t i = 0; i < s1.size(); ++i) {
         if (s1[i] != s2[i])
             return false;
     }
@@ -250,21 +327,7 @@ std::ostream &operator<<(std::ostream &os, const ByteOrder &v) {
 }
 
 std::ostream &operator<<(std::ostream &os, const Type &v) {
-    switch (v) {
-        case Type::Invalid: os << "invalid"; break;
-        case Type::Int8:    os << "int8";    break;
-        case Type::UInt8:   os << "uint8";   break;
-        case Type::Int16:   os << "int16";   break;
-        case Type::UInt16:  os << "uint16";  break;
-        case Type::Int32:   os << "int32";   break;
-        case Type::UInt32:  os << "uint32";  break;
-        case Type::Int64:   os << "int64";   break;
-        case Type::UInt64:  os << "uint64";  break;
-        case Type::Float16: os << "float16"; break;
-        case Type::Float32: os << "float32"; break;
-        case Type::Float64: os << "float64"; break;
-        default: raise("operator<<(Type): invalid field type!");
-    }
+    os << type_info(v).name;
     return os;
 }
 
@@ -275,6 +338,8 @@ std::ostream &operator<<(std::ostream &os, const Flag &v) {
         case Flag::Check:      os << "check";      break;
         case Flag::Default:    os << "default";    break;
         case Flag::Weight:     os << "weight";     break;
+        case Flag::Alpha:      os << "alpha";      break;
+        case Flag::PremultipliedAlpha: os << "premultiplied alpha"; break;
         default: raise("operator<<(Flag): invalid field type!");
     }
     return os;
@@ -282,14 +347,25 @@ std::ostream &operator<<(std::ostream &os, const Flag &v) {
 
 std::ostream &operator<<(std::ostream &os, const Field &v) {
     os << v.type << " " << v.name << "; // @" << v.offset;
-    for (Flag f : { Flag::Normalized, Flag::Gamma, Flag::Weight, Flag::Default, Flag::Check }) {
+    for (Flag f : { Flag::Normalized, Flag::Gamma, Flag::Weight, Flag::Alpha,
+                    Flag::PremultipliedAlpha, Flag::Default, Flag::Check }) {
        if (has_flag(v.flags, f))
            os << ", " << f;
     }
 
     if (has_flag(v.flags, Flag::Default) ||
         has_flag(v.flags, Flag::Check))
-        os << ", value=0x" << std::hex << v.value << std::hex;
+        os << ", value=0x" << std::hex << v.value << std::dec;
+
+    if (!v.blend.empty()) {
+        os << ", blend=<";
+        for (size_t i = 0; i < v.blend.size(); ++i) {
+            os << v.blend[i].first << " * " << v.blend[i].second;
+            if (i + 1 < v.blend.size())
+                os << " + ";
+        }
+        os << ">";
+    }
 
     return os;
 }

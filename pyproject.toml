@@ -1,0 +1,74 @@
+[build-system]
+requires = [
+    "scikit-build-core>=0.12",
+    "nanobind>=2.12",
+    "numpy"
+]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "struct-jit"
+version = "0.1.0"
+description = "Efficient conversion between structured binary representations"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { file = "LICENSE" }
+dependencies = ["numpy"]
+
+[project.optional-dependencies]
+disasm = ["capstone"]
+
+[tool.scikit-build]
+minimum-version = "0.12"
+wheel.packages = ["struct_jit"]
+wheel.py-api = "cp312"
+sdist.inclusion-mode = "manual"
+sdist.include = [
+    "/.github/dependabot.yml",
+    "/.github/workflows/build.yml",
+    "/.gitignore",
+    "/asm/*.S",
+    "/asm/*.h",
+    "/CMakeLists.txt",
+    "/ext/cmake-defaults/CMakeLists.txt",
+    "/ext/cmake-defaults/README.md",
+    "/ext/nanobind/ext/robin_map/include/tsl/*.h",
+    "/ext/nanobind/ext/robin_map/LICENSE",
+    "/include/struct-jit/*.h",
+    "/LICENSE",
+    "/pyproject.toml",
+    "/pytest.ini",
+    "/README.md",
+    "/src/*.cpp",
+    "/src/*.h",
+    "/src/python/*.cpp",
+    "/src/python/*.h",
+    "/src/python/CMakeLists.txt",
+    "/struct_jit/*.py",
+    "/tests/*.cpp",
+    "/tests/*.py"
+]
+sdist.exclude = [
+    ".cache/**",
+    ".claude/**",
+    ".pytest_cache/**",
+    "build/**",
+    "dist/**",
+    "ext/nanobind/**",
+    "Testing/**",
+    "wheelhouse/**",
+    "**/.git",
+    "**/.git/**",
+    "**/__pycache__",
+    "**/__pycache__/**",
+    "**/*.a",
+    "**/*.dll",
+    "**/*.dylib",
+    "**/*.o",
+    "**/*.pyc",
+    "**/*.pyd",
+    "**/*.so"
+]
+
+[tool.scikit-build.cmake.define]
+SJIT_ENABLE_PYTHON = "ON"
