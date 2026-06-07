@@ -1,6 +1,8 @@
 Struct-JIT
 ==========
 
+[![Tests](https://github.com/mitsuba-renderer/struct-jit/actions/workflows/test.yml/badge.svg)](https://github.com/mitsuba-renderer/struct-jit/actions/workflows/test.yml)
+
 This small self-contained library facilitates efficient conversion from one
 kind of structured representation to another. The need for this frequently
 arises when dealing with visual information including images or 3D meshes. For
