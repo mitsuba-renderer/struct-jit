@@ -6,7 +6,15 @@
 #include <cstring>
 #include <utility>
 #include <vector>
+#if defined(_MSC_VER)
+// C4324: robin_map pads buckets to honor an alignment specifier (benign).
+#  pragma warning(push)
+#  pragma warning(disable: 4324)
+#endif
 #include <tsl/robin_map.h>
+#if defined(_MSC_VER)
+#  pragma warning(pop)
+#endif
 #include "gamma_coeffs.h"
 
 #if defined(__x86_64__) || defined(_M_X64)
@@ -907,7 +915,7 @@ void Converter::create_kernel() {
     kernel.reserve(200);
 
     put(impl::main_prefix);
-    size_t main_start = kernel.size();
+    size_t main_start_offset = kernel.size();
     put(impl::main_start);
     size_t loop_body = kernel.size();
 
@@ -975,7 +983,7 @@ void Converter::create_kernel() {
     put(impl::main_inc_in, (uint32_t) m_in.nbytes());
     put(impl::main_inc_out, (uint32_t) m_out.nbytes());
     put(impl::main_suffix_inner, (uint32_t) loop_body);
-    put(impl::main_suffix_outer, (uint32_t) main_start);
+    put(impl::main_suffix_outer, (uint32_t) main_start_offset);
     put(impl::main_postfix);
 
     // Failure epilogue (only when checks exist). The success path returns above

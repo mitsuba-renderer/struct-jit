@@ -18,6 +18,12 @@
 #  define SJIT_EXPORT    __attribute__ ((visibility("default")))
 #endif
 
+#if defined(_MSC_VER)
+// C4251: STL members of exported classes lack a DLL interface
+#  pragma warning(push)
+#  pragma warning(disable: 4251)
+#endif
+
 NAMESPACE_BEGIN(struct_jit)
 
 // --------------------------------------------------------------------------
@@ -393,3 +399,7 @@ extern SJIT_EXPORT std::ostream &operator<<(std::ostream &, const Field &);
 extern SJIT_EXPORT std::ostream &operator<<(std::ostream &, const Struct &);
 
 NAMESPACE_END(struct_jit)
+
+#if defined(_MSC_VER)
+#  pragma warning(pop)
+#endif

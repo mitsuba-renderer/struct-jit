@@ -22,7 +22,15 @@
 #include "half.h"
 #include "srgb.h"
 #include "dither.h"
+#if defined(_MSC_VER)
+// C4324: robin_map pads buckets to honor an alignment specifier (benign).
+#  pragma warning(push)
+#  pragma warning(disable: 4324)
+#endif
 #include <tsl/robin_map.h>
+#if defined(_MSC_VER)
+#  pragma warning(pop)
+#endif
 #include <functional>
 #include <memory>
 #include <mutex>

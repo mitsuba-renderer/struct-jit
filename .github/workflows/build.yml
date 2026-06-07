@@ -7,10 +7,6 @@ on:
         description: 'Upload wheels to PyPI? (0: no, 1: yes)'
         required: true
         default: '0'
-  push:
-    branches: [master]
-  pull_request:
-    branches: [master]
 
 env:
   CIBW_SKIP: cp38-macosx_arm64
