@@ -216,10 +216,10 @@ main_inc_out LABEL BYTE
     DB 048h, 081h, 0C2h, 078h, 056h, 034h, 012h
 main_inc_out_end LABEL BYTE
 main_suffix_inner LABEL BYTE
-    DB 049h, 0FFh, 0C3h, 04Dh, 039h, 0C3h, 00Fh, 085h, 000h, 000h, 000h, 000h
+    DB 049h, 0FFh, 0C3h, 04Dh, 039h, 0C3h, 00Fh, 085h, 078h, 056h, 034h, 012h
 main_suffix_inner_end LABEL BYTE
 main_suffix_outer LABEL BYTE
-    DB 049h, 0FFh, 0C2h, 04Dh, 039h, 0CAh, 00Fh, 085h, 000h, 000h, 000h, 000h
+    DB 049h, 0FFh, 0C2h, 04Dh, 039h, 0CAh, 00Fh, 085h, 078h, 056h, 034h, 012h
 main_suffix_outer_end LABEL BYTE
 main_postfix LABEL BYTE
     DB 0C5h, 0F8h, 028h, 034h, 024h, 0C5h, 0F8h, 028h, 07Ch, 024h, 010h, 048h
@@ -427,7 +427,7 @@ load_imm_chk LABEL BYTE
     DB 048h, 08Bh, 01Dh, 078h, 056h, 034h, 012h
 load_imm_chk_end LABEL BYTE
 chk_ne LABEL BYTE
-    DB 048h, 039h, 0D8h, 00Fh, 085h, 000h, 000h, 000h, 000h
+    DB 048h, 039h, 0D8h, 00Fh, 085h, 078h, 056h, 034h, 012h
 chk_ne_end LABEL BYTE
 weight_recip_f4 LABEL BYTE
     DB 048h, 0C7h, 0C3h, 000h, 000h, 080h, 03Fh, 0C4h, 0E1h, 0F9h, 06Eh, 0D3h
