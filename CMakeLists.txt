@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.15...3.18)
 project(sjit
   VERSION 0.1.0
   DESCRIPTION "Struct-JIT"
-  LANGUAGES CXX ASM
+  LANGUAGES CXX
 )
 
 option(SJIT_ENABLE_PYTHON "Build Python extension library?" ON)
@@ -47,15 +47,27 @@ set(SJIT_SOURCES
   src/dither.cpp
 )
 
+# Pick the snippet library for the target arch/ABI. MSVC lacks a GNU assembler,
+# so it uses a checked-in MASM translation regenerated via `make -C asm`.
 if (SJIT_TARGET_ARCH MATCHES "(aarch64|arm64|ARM64)")
-  list(APPEND SJIT_SOURCES asm/asm_aarch64.S)
+  set(SJIT_ASM_FILE asm/asm_aarch64.S)
 elseif (SJIT_TARGET_ARCH MATCHES "(x86_64|X86_64|amd64|AMD64)")
-  if (WIN32)
-    list(APPEND SJIT_SOURCES asm/asm_x64_win.S)
+  if (WIN32 AND MSVC)
+    set(SJIT_ASM_FILE asm/asm_x64_win.asm)
+  elseif (WIN32)
+    set(SJIT_ASM_FILE asm/asm_x64_win.S)
   else()
-    list(APPEND SJIT_SOURCES asm/asm_x64_sysv.S)
+    set(SJIT_ASM_FILE asm/asm_x64_sysv.S)
   endif()
 endif()
+
+if (SJIT_ASM_FILE MATCHES "\\.asm$")
+  enable_language(ASM_MASM)
+else()
+  enable_language(ASM)
+endif()
+
+list(APPEND SJIT_SOURCES ${SJIT_ASM_FILE})
 
 add_library(struct-jit SHARED ${SJIT_SOURCES})
 
@@ -68,6 +80,14 @@ target_include_directories(struct-jit
   PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/asm
   ${CMAKE_CURRENT_SOURCE_DIR}/ext/nanobind/ext/robin_map/include)
+
+if (MSVC)
+  foreach (cfg RELEASE DEBUG RELWITHDEBINFO MINSIZEREL)
+    set_target_properties(struct-jit PROPERTIES
+      RUNTIME_OUTPUT_DIRECTORY_${cfg} ${CMAKE_BINARY_DIR}/struct_jit
+      ARCHIVE_OUTPUT_DIRECTORY_${cfg} ${CMAKE_BINARY_DIR}/struct_jit)
+  endforeach()
+endif()
 
 if (SJIT_MASTER_PROJECT)
   if (SKBUILD)
@@ -119,4 +139,10 @@ if (BUILD_TESTING)
   target_compile_features(struct-jit-cpp-tests PRIVATE cxx_std_17)
   target_link_libraries(struct-jit-cpp-tests PRIVATE struct-jit)
   add_test(NAME struct-jit-cpp-tests COMMAND struct-jit-cpp-tests)
+  if (MSVC)
+    foreach (cfg RELEASE DEBUG RELWITHDEBINFO MINSIZEREL)
+      set_target_properties(struct-jit-cpp-tests PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY_${cfg} ${CMAKE_BINARY_DIR}/struct_jit)
+    endforeach()
+  endif()
 endif()
