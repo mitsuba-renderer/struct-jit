@@ -855,7 +855,7 @@ void Converter::create_kernel() {
     // (no numeric conversion), exactly as the software fallback does. Endianness
     // is applied to the raw value if the output's byte order differs from native.
     auto emit_default = [&](const Field &field) {
-        emit_pool_load(impl::load_imm, field.value); // field.value is u64-extended
+        emit_pool_load(impl::load_imm, encode_value(field));
 
         // The raw value lives in the integer register, so store it through the
         // integer path regardless of whether the field is float- or int-typed.
@@ -904,7 +904,7 @@ void Converter::create_kernel() {
             put(sz == 2 ? impl::bswap_u2 : sz == 4 ? impl::bswap_u4
                                                    : impl::bswap_u8);
 
-        emit_pool_load(impl::load_imm_chk, canonical_value(field.value, field.type));
+        emit_pool_load(impl::load_imm_chk, encode_value(field));
 
         SnippetSpan snippet = get_snippet(impl::chk_ne);
         size_t kernel_offset = kernel.size();

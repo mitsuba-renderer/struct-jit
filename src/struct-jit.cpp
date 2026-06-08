@@ -38,9 +38,9 @@ static void validate_field_definition(const Field &f) {
         raise("Struct::validate(): field \"" + f.name +
               "\" specifies 'Normalized', which requires an integral type!");
 
-    if (has_flag(f.flags, Flag::Gamma) &&
+    if (has_flag(f.flags, Flag::Gamma) && type_is_integer(f.type) &&
         !has_flag(f.flags, Flag::Normalized))
-        raise("Struct::validate(): field \"" + f.name +
+        raise("Struct::validate(): integer field \"" + f.name +
               "\" specifies 'Gamma' without 'Normalized'!");
 
     if (has_flag(f.flags, Flag::Check) && has_flag(f.flags, Flag::Default))
@@ -95,12 +95,11 @@ size_t Struct::nbytes() const {
     return size;
 }
 
-Struct &Struct::append(const std::string &name, Type type, uint32_t flags, const void *value) {
+Struct &Struct::append(const std::string &name, Type type, uint32_t flags, double value) {
     if (type == Type::Invalid)
         raise("Struct::append(): an invalid field type was specified!");
 
-    Field f { name, type, 0, flags, 0, {} };
-    copy_value(f.value, value, type);
+    Field f { name, type, 0, flags, value, {} };
     validate_field_definition(f);
 
     if (contains(name))
@@ -128,8 +127,6 @@ Struct &Struct::append(const Field &field_) {
     if (contains(field.name))
         raise("Struct::append(): a field with the name \"" + field.name +
               "\" already exists!");
-
-    field.value = canonical_value(field.value, field.type);
 
     auto it = std::lower_bound(
         m_fields.begin(),
@@ -263,6 +260,11 @@ bool type_is_unsigned_int(Type type) {
     return type_info(type).unsigned_integer;
 }
 
+bool type_is_integer(Type type) {
+    const TypeInfo &info = type_info(type);
+    return info.signed_integer || info.unsigned_integer;
+}
+
 bool type_is_float(Type type) {
     return type_info(type).floating_point;
 }
@@ -289,7 +291,7 @@ bool operator==(const Field &f1, const Field &f2) {
            f1.offset == f2.offset &&
            f1.flags == f2.flags &&
            f1.blend == f2.blend &&
-           memcmp(&f1.value, &f2.value, type_size(f1.type)) == 0;
+           f1.value == f2.value;
 }
 
 bool operator!=(const Field &f1, const Field &f2) {
@@ -355,7 +357,7 @@ std::ostream &operator<<(std::ostream &os, const Field &v) {
 
     if (has_flag(v.flags, Flag::Default) ||
         has_flag(v.flags, Flag::Check))
-        os << ", value=0x" << std::hex << v.value << std::dec;
+        os << ", value=" << v.value;
 
     if (!v.blend.empty()) {
         os << ", blend=<";

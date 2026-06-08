@@ -203,17 +203,13 @@ static void hash_combine(size_t &seed, size_t value) {
     seed ^= value + 0x9e3779b97f4a7c15ull + (seed << 6) + (seed >> 2);
 }
 
-static size_t hash_value_bits(uint64_t value, Type type) {
-    return std::hash<uint64_t>()(canonical_value(value, type));
-}
-
 static size_t hash_field(const Field &field) {
     size_t result = 0;
     hash_combine(result, std::hash<std::string>()(field.name));
     hash_combine(result, std::hash<uint32_t>()((uint32_t) field.type));
     hash_combine(result, std::hash<size_t>()(field.offset));
     hash_combine(result, std::hash<uint32_t>()(field.flags));
-    hash_combine(result, hash_value_bits(field.value, field.type));
+    hash_combine(result, std::hash<double>()(field.value));
     for (const auto &term : field.blend) {
         hash_combine(result, std::hash<double>()(term.first));
         hash_combine(result, std::hash<std::string>()(term.second));
@@ -506,7 +502,8 @@ bool Converter::convert_fallback_impl(const uint8_t *in_base, uint8_t *out_base,
                 memcpy(&raw, in + fi.offset, type_size(fi.type));
                 if (m_in.byte_order() != native_byte_order())
                     bswap((uint8_t *) &raw, type_size(fi.type));
-                if (memcmp(&raw, &fi.value, type_size(fi.type)) != 0)
+                uint64_t expected = encode_value(fi);
+                if (memcmp(&raw, &expected, type_size(fi.type)) != 0)
                     return false;
             }
 
@@ -539,7 +536,8 @@ bool Converter::convert_fallback_impl(const uint8_t *in_base, uint8_t *out_base,
                 } else {
                     // Input field is missing; substitute the default value.
                     const Field &fo = *t.output;
-                    memcpy(&temp.value, &fo.value, type_size(fo.type));
+                    uint64_t def = encode_value(fo);
+                    memcpy(&temp.value, &def, type_size(fo.type));
                     temp.type = fo.type;
                 }
 

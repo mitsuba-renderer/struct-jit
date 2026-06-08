@@ -61,6 +61,9 @@ extern SJIT_EXPORT bool type_is_signed_int(Type type);
 /// Check whether the given type is an unsigned integer
 extern SJIT_EXPORT bool type_is_unsigned_int(Type type);
 
+/// Check whether the given type is an integer (signed or unsigned)
+extern SJIT_EXPORT bool type_is_integer(Type type);
+
 /// Check whether the given type is a floating point type
 extern SJIT_EXPORT bool type_is_float(Type type);
 
@@ -72,6 +75,31 @@ extern SJIT_EXPORT size_t type_size(Type type);
 
 /// Return the representable range of a particular type
 extern SJIT_EXPORT std::pair<double, double> type_range(Type type);
+
+// --------------------------------------------------------------------------
+// Compile-time mapping from a C++ scalar type to its \ref Type
+
+template <typename T> struct type_id;
+
+#define SJIT_TYPE_ID(T, entry)                                                 \
+    template <> struct type_id<T> {                                            \
+        static constexpr Type value = Type::entry;                             \
+    };
+
+SJIT_TYPE_ID(int8_t,   Int8)
+SJIT_TYPE_ID(uint8_t,  UInt8)
+SJIT_TYPE_ID(int16_t,  Int16)
+SJIT_TYPE_ID(uint16_t, UInt16)
+SJIT_TYPE_ID(int32_t,  Int32)
+SJIT_TYPE_ID(uint32_t, UInt32)
+SJIT_TYPE_ID(int64_t,  Int64)
+SJIT_TYPE_ID(uint64_t, UInt64)
+SJIT_TYPE_ID(float,    Float32)
+SJIT_TYPE_ID(double,   Float64)
+#undef SJIT_TYPE_ID
+
+/// Convenience variable template: the \ref Type corresponding to C++ type \c T
+template <typename T> constexpr Type type_v = type_id<T>::value;
 
 // --------------------------------------------------------------------------
 // Field flags
@@ -151,8 +179,15 @@ struct SJIT_EXPORT Field {
     /// Bitwise combination of \ref Flag values
     uint32_t flags = 0;
 
-    /// Default value (reinterpreted according to \ref type)
-    uint64_t value = 0;
+    /**
+     * \brief Logical value associated with the field, in double precision.
+     *
+     * Used as the substituted default for a \ref Flag::Default field, or the
+     * expected value for a \ref Flag::Check field. It is interpreted like a
+     * regular field value, i.e. subject to the field's normalization and gamma
+     * encoding.
+     */
+    double value = 0.0;
 
     /**
      * \brief Blend specification: when non-empty, the field's value is a linear
@@ -206,7 +241,7 @@ public:
     Struct &append(const std::string &name,
                    Type type,
                    uint32_t flags = 0,
-                   const void *value = nullptr);
+                   double value = 0.0);
 
     /// Append a new field to the \c Struct (all information must be provided)
     Struct &append(const Field &field);

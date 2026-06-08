@@ -10,7 +10,10 @@
 #pragma once
 
 #include <struct-jit/struct-jit.h>
+#include "half.h"
+#include "srgb.h"
 #include <array>
+#include <cmath>
 #include <cstring>
 #include <limits>
 #include <stdexcept>
@@ -187,6 +190,34 @@ inline std::pair<double, double> int_clamp_bounds(Type dst, Type working) {
                                              : std::numeric_limits<double>::digits;
     return { info.min_value,
              int_clamp_hi(value_bits, mant_bits, info.max_value) };
+}
+
+/// Encode a field's logical \ref Field::value into the raw bits stored for it
+/// (native-order low bytes of a \c uint64_t), as the converters would write it.
+inline uint64_t encode_value(const Field &field) {
+    const TypeInfo &info = type_info(field.type);
+    double value = field.value;
+
+    if (has_flag(field.flags, Flag::Gamma))
+        value = linear_to_srgb(value);
+
+    uint64_t bits = 0;
+    if (info.signed_integer || info.unsigned_integer) {
+        if (has_flag(field.flags, Flag::Normalized))
+            value *= info.max_value;
+        if (value < info.min_value) value = info.min_value;
+        if (value > info.max_value) value = info.max_value;
+        int64_t iv = (int64_t) std::rint(value);
+        memcpy(&bits, &iv, info.size);
+    } else {
+        switch (field.type) {
+            case Type::Float16: { half  h((float) value); memcpy(&bits, &h, 2); } break;
+            case Type::Float32: { float f = (float) value; memcpy(&bits, &f, 4); } break;
+            case Type::Float64: { memcpy(&bits, &value, 8); } break;
+            default: break;
+        }
+    }
+    return bits;
 }
 
 NAMESPACE_END(struct_jit)
