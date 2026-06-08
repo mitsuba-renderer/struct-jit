@@ -42,7 +42,7 @@ jobs:
 
       - name: Prepare compiler environment for Windows
         if: runner.os == 'Windows'
-        uses: ilammy/msvc-dev-cmd@v1.13.0
+        uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
 
@@ -73,7 +73,7 @@ jobs:
           path: dist
           merge-multiple: true
 
-      - uses: pypa/gh-action-pypi-publish@v1.13.0
+      - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           user: __token__
           password: ${{ secrets.pypi_password }}

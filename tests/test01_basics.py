@@ -138,14 +138,16 @@ def test05_roundtrip_normalized(source, dest, jit, precision):
                           values_out, values_in, err_thresh)
 
 
+# Field.value holds a logical value in double precision, so integers are
+# represented exactly up to 2**53.
 @pytest.mark.parametrize('type_, value', [
-    (sj.Type.UInt64, 2**63 + 5),
+    (sj.Type.UInt64, 2**53 - 1),
     (sj.Type.Int64, -7),
     (sj.Type.Float16, 1.5),
     (sj.Type.Float32, 1.5),
     (sj.Type.Float64, 1.5),
 ])
-def test06_field_value_full_scalar_support(type_, value):
+def test06_field_value_scalar_roundtrip(type_, value):
     f = sj.Field()
     f.type = type_
     f.value = value
@@ -155,13 +157,13 @@ def test06_field_value_full_scalar_support(type_, value):
         assert f.value == value
 
 
-def test07_struct_append_supports_wide_and_half_defaults():
+def test07_struct_append_integer_and_half_defaults():
     s = sj.Struct()
     s.append('half', sj.Type.Float16, sj.Flag.Default, 1.5)
-    s.append('u64', sj.Type.UInt64, sj.Flag.Default, 2**63 + 5)
+    s.append('u64', sj.Type.UInt64, sj.Flag.Default, 2**53 - 1)
     s.append('i64', sj.Type.Int64, sj.Flag.Default, -7)
     assert s['half'].value == pytest.approx(1.5, rel=1e-3)
-    assert s['u64'].value == 2**63 + 5
+    assert s['u64'].value == 2**53 - 1
     assert s['i64'].value == -7
 
 

@@ -6,9 +6,8 @@
 #include <nanobind/stl/pair.h>
 #include <nanobind/stl/vector.h>
 #include <struct-jit/struct-jit.h>
+#include <struct-jit/python.h>
 #include <sstream>
-#include <cstring>
-#include "../half.h"
 #include "../type_info.h"
 #include "docstr.h"
 
@@ -122,73 +121,9 @@ static sj::Struct struct_from_dtype(nb::handle dt) {
     return s;
 }
 
-template <typename T> static nb::object load_value(const sj::Field &f) {
-    T value;
-    memcpy(&value, &f.value, sj::type_size(f.type));
-    return nb::cast(value);
-}
-
-template <typename T> static void store_value(sj::Field &f, nb::handle o) {
-    T value = nb::cast<T>(o);
-    f.value = 0;
-    memcpy(&f.value, &value, sj::type_size(f.type));
-}
-
-static nb::object field_value_to_python(const sj::Field &f) {
-    switch (f.type) {
-        case sj::Type::UInt8:   return load_value<uint8_t>(f);
-        case sj::Type::Int8:    return load_value<int8_t>(f);
-        case sj::Type::UInt16:  return load_value<uint16_t>(f);
-        case sj::Type::Int16:   return load_value<int16_t>(f);
-        case sj::Type::UInt32:  return load_value<uint32_t>(f);
-        case sj::Type::Int32:   return load_value<int32_t>(f);
-        case sj::Type::UInt64:  return load_value<uint64_t>(f);
-        case sj::Type::Int64:   return load_value<int64_t>(f);
-        case sj::Type::Float16: {
-            uint16_t bits;
-            memcpy(&bits, &f.value, sizeof(bits));
-            return nb::cast(float16_to_float32(bits));
-        }
-        case sj::Type::Float32: return load_value<float>(f);
-        case sj::Type::Float64: return load_value<double>(f);
-        default:
-            throw nb::type_error("Unexpected field type!");
-    }
-}
-
-static void field_value_from_python(sj::Field &f, nb::handle o) {
-    switch (f.type) {
-        case sj::Type::UInt8:   store_value<uint8_t>(f, o); break;
-        case sj::Type::Int8:    store_value<int8_t>(f, o); break;
-        case sj::Type::UInt16:  store_value<uint16_t>(f, o); break;
-        case sj::Type::Int16:   store_value<int16_t>(f, o); break;
-        case sj::Type::UInt32:  store_value<uint32_t>(f, o); break;
-        case sj::Type::Int32:   store_value<int32_t>(f, o); break;
-        case sj::Type::UInt64:  store_value<uint64_t>(f, o); break;
-        case sj::Type::Int64:   store_value<int64_t>(f, o); break;
-        case sj::Type::Float16: {
-            uint16_t bits = float32_to_float16((float) nb::cast<double>(o));
-            f.value = 0;
-            memcpy(&f.value, &bits, sizeof(bits));
-            break;
-        }
-        case sj::Type::Float32: store_value<float>(f, o); break;
-        case sj::Type::Float64: store_value<double>(f, o); break;
-        default:
-            throw nb::type_error("Unexpected field type!");
-    }
-}
-
-static void object_to_value_bits(sj::Type type, nb::handle o, uint64_t &value) {
-    sj::Field field;
-    field.type = type;
-    field_value_from_python(field, o);
-    value = field.value;
-}
-
 static nb::bytes convert_buffer(const sj::Converter &c, const void *input_data,
                                 size_t input_len, size_t height) {
-    size_t record_size = c.in().nbytes();
+    size_t record_size = c.source().nbytes();
     if (record_size == 0)
         throw std::runtime_error("Input structure has a record size of zero!");
     size_t count = input_len / record_size;
@@ -199,7 +134,7 @@ static nb::bytes convert_buffer(const sj::Converter &c, const void *input_data,
 
     // Records are laid out row-major; width is the fast (inner) axis.
     size_t width = count / height;
-    std::string result(c.out().nbytes() * count, '\0');
+    std::string result(c.target().nbytes() * count, '\0');
     bool ok;
     {
         nb::gil_scoped_release release;
@@ -211,11 +146,7 @@ static nb::bytes convert_buffer(const sj::Converter &c, const void *input_data,
     return nb::bytes(result.data(), result.size());
 }
 
-NB_MODULE(struct_jit_ext, m_) {
-    (void) m_;
-    nb::module_ m = nb::module_::import_("struct_jit");
-    m.attr("__doc__") = "Struct-JIT";
-
+void sj::python_export(nb::module_ &m) {
     nb::enum_<sj::ByteOrder>(m, "ByteOrder", D(ByteOrder))
         .value("Native", sj::ByteOrder::Native, D(ByteOrder, Native))
         .value("LittleEndian", sj::ByteOrder::LittleEndian, D(ByteOrder, LittleEndian))
@@ -256,10 +187,7 @@ NB_MODULE(struct_jit_ext, m_) {
          .def_rw("offset", &sj::Field::offset, D(Field, offset))
          .def_rw("flags", &sj::Field::flags, D(Field, flags))
          .def_rw("blend", &sj::Field::blend, D(Field, blend))
-         .def_prop_rw("value",
-             &field_value_to_python,
-             &field_value_from_python,
-             D(Field, value));
+         .def_rw("value", &sj::Field::value, D(Field, value));
 
     field.def(nb::self == nb::self)
          .def(nb::self != nb::self)
@@ -281,16 +209,11 @@ NB_MODULE(struct_jit_ext, m_) {
             new (self) sj::Struct(std::move(s));
         }, "dtype"_a)
         .def(nb::init<const sj::Struct &>())
-        .def("append", [](sj::Struct *s, const std::string &name, sj::Type type, uint32_t flags, nb::object value_py) -> sj::Struct* {
-            uint64_t value = 0;
-            const void *value_ptr = nullptr;
-            if (!value_py.is_none()) {
-                object_to_value_bits(type, value_py, value);
-                value_ptr = &value;
-            }
-            s->append(name, type, flags, value_ptr);
+        .def("append", [](sj::Struct *s, const std::string &name, sj::Type type,
+                          uint32_t flags, double value) -> sj::Struct* {
+            s->append(name, type, flags, value);
             return s;
-        }, "name"_a, "type"_a, "flags"_a = 0, "value"_a = nb::none(),
+        }, "name"_a, "type"_a, "flags"_a = 0, "value"_a = 0.0,
            nb::rv_policy::reference, D(Struct, append))
         .def("append", (sj::Struct & (sj::Struct::*)(const sj::Field &)) &sj::Struct::append,
              "field"_a, nb::rv_policy::reference, D(Struct, append, 2))
@@ -350,12 +273,12 @@ NB_MODULE(struct_jit_ext, m_) {
 
     nb::class_<sj::Converter>(m, "Converter", D(Converter))
         .def(nb::init<const sj::Struct &, const sj::Struct &, bool, bool, sj::Type>(),
-             "in"_a, "out"_a, "jit"_a = true, "dither"_a = false,
+             "source"_a, "target"_a, "jit"_a = true, "dither"_a = false,
              "working_precision"_a = sj::Type::Float32)
-        .def("in", &sj::Converter::in, nb::rv_policy::reference_internal,
-             D(Converter, in))
-        .def("out", &sj::Converter::out, nb::rv_policy::reference_internal,
-             D(Converter, out))
+        .def("source", &sj::Converter::source, nb::rv_policy::reference_internal,
+             D(Converter, source))
+        .def("target", &sj::Converter::target, nb::rv_policy::reference_internal,
+             D(Converter, target))
         .def("kernel", [](const sj::Converter &c) -> nb::object {
             auto [ptr, size] = c.kernel();
             if (!ptr)
@@ -370,7 +293,7 @@ NB_MODULE(struct_jit_ext, m_) {
 
     m.def("native_byte_order", &sj::native_byte_order, D(native_byte_order));
     m.def("make_converter", &sj::make_converter,
-          "in"_a, "out"_a, "jit"_a = true, "dither"_a = false,
+          "source"_a, "target"_a, "jit"_a = true, "dither"_a = false,
           "working_precision"_a = sj::Type::Float32,
           nb::rv_policy::reference,
           "Return an existing matching converter or create and cache one");
@@ -383,3 +306,12 @@ NB_MODULE(struct_jit_ext, m_) {
     m.def("type_size", &sj::type_size, D(type_size));
     m.def("type_range", &sj::type_range, D(type_range));
 }
+
+#if !defined(SJIT_PYTHON_EMBED)
+NB_MODULE(struct_jit_ext, m_) {
+    (void) m_;
+    nb::module_ m = nb::module_::import_("struct_jit");
+    m.attr("__doc__") = "Struct-JIT";
+    sj::python_export(m);
+}
+#endif

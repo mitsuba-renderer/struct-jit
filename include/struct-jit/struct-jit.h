@@ -171,6 +171,16 @@ struct SJIT_EXPORT Field {
     /// Name of the field
     std::string name;
 
+    /**
+     * \brief Optional input field name for a plain renamed copy (target only).
+     *
+     * When non-empty, the converter reads this output from the input field named
+     * \c source instead of one matching \ref name, with the usual type, gamma, and
+     * alpha handling. Mutually exclusive with \ref blend. When left empty, the
+     * converter falls back to looking up an input field matching \ref name.
+     */
+    std::string source;
+
     Type type = Type::Invalid;
 
     /// Offset within the \c Struct (in bytes)
@@ -327,7 +337,7 @@ public:
      *    single working type is used for all fields; must be \c Type::Float32
      *    (the default) or \c Type::Float64.
      */
-    Converter(const Struct &in, const Struct &out, bool jit = true,
+    Converter(const Struct &source, const Struct &target, bool jit = true,
               bool dither = false, Type working_precision = Type::Float32);
     ~Converter();
 
@@ -336,8 +346,8 @@ public:
     Converter(Converter &&c) noexcept;
     Converter &operator=(Converter &&c) noexcept;
 
-    const Struct &in() const { return m_in; }
-    const Struct &out() const { return m_out; }
+    const Struct &source() const { return m_source; }
+    const Struct &target() const { return m_target; }
 
     bool convert(const void *in, void *out, size_t width, size_t height) const;
 
@@ -366,7 +376,7 @@ private:
 
 private:
     using Kernel = bool (const void *, void *, size_t, size_t);
-    Struct m_in, m_out;
+    Struct m_source, m_target;
 
     /// Ordered transfer schedule produced by \ref create_plan(). Each entry is
     /// a (input field index, output field index) pair; \ref None in the input
@@ -410,7 +420,7 @@ private:
 
 /// Return an existing matching converter or create and cache one.
 SJIT_EXPORT const Converter &make_converter(
-    const Struct &in, const Struct &out, bool jit = true,
+    const Struct &source, const Struct &target, bool jit = true,
     bool dither = false, Type working_precision = Type::Float32);
 
 /// Remove all cached converters and release their executable kernels.

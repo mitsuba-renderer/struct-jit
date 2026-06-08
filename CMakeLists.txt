@@ -120,18 +120,22 @@ endif()
 # and regenerate the checked-in file with
 #   cmake --build <builddir> --target docstrings   (or: ninja docstrings)
 # ---------------------------------------------------------------------------
-find_package(Python COMPONENTS Interpreter QUIET)
-if (Python_FOUND)
-  add_custom_target(docstrings
-    COMMAND ${Python_EXECUTABLE} -m pybind11_mkdoc
-            -o ${CMAKE_CURRENT_SOURCE_DIR}/src/python/docstr.h
-            -w 70 -std=c++17
-            -I ${CMAKE_CURRENT_SOURCE_DIR}/include
-            -I ${CMAKE_CURRENT_SOURCE_DIR}/include/struct-jit
-            ${CMAKE_CURRENT_SOURCE_DIR}/include/struct-jit/struct-jit.h
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    COMMENT "Regenerating src/python/docstr.h with pybind11_mkdoc"
-    VERBATIM USES_TERMINAL)
+# Only define this developer convenience target when struct-jit is the top-level
+# project; otherwise its name would collide with an embedding project's own.
+if (SJIT_MASTER_PROJECT)
+  find_package(Python COMPONENTS Interpreter QUIET)
+  if (Python_FOUND)
+    add_custom_target(docstrings
+      COMMAND ${Python_EXECUTABLE} -m pybind11_mkdoc
+              -o ${CMAKE_CURRENT_SOURCE_DIR}/src/python/docstr.h
+              -w 70 -std=c++17
+              -I ${CMAKE_CURRENT_SOURCE_DIR}/include
+              -I ${CMAKE_CURRENT_SOURCE_DIR}/include/struct-jit
+              ${CMAKE_CURRENT_SOURCE_DIR}/include/struct-jit/struct-jit.h
+      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+      COMMENT "Regenerating src/python/docstr.h with pybind11_mkdoc"
+      VERBATIM USES_TERMINAL)
+  endif()
 endif()
 
 if (BUILD_TESTING)

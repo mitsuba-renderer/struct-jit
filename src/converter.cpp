@@ -141,9 +141,9 @@ static void convert_scalar(Temp &t, Type target, bool norm, double dither = 0.0)
     t.type = target;
 }
 
-Converter::Converter(const Struct &in, const Struct &out, bool jit, bool dither,
+Converter::Converter(const Struct &source, const Struct &target, bool jit, bool dither,
                      Type working_precision)
-    : m_in(in), m_out(out), m_dither(dither), m_working(working_precision),
+    : m_source(source), m_target(target), m_dither(dither), m_working(working_precision),
       m_kernel(nullptr), m_kernel_size(0) {
     if (working_precision != Type::Float32 && working_precision != Type::Float64)
         raise("Converter(): working_precision must be Float32 or Float64!");
@@ -158,8 +158,8 @@ Converter::~Converter() {
 }
 
 Converter::Converter(Converter &&c) noexcept
-    : m_in(std::move(c.m_in)),
-      m_out(std::move(c.m_out)),
+    : m_source(std::move(c.m_source)),
+      m_target(std::move(c.m_target)),
       m_plan(std::move(c.m_plan)),
       m_weight_divide(c.m_weight_divide),
       m_weight_in(c.m_weight_in),
@@ -181,8 +181,8 @@ Converter &Converter::operator=(Converter &&c) noexcept {
     if (m_kernel)
         release_kernel();
 
-    m_in = std::move(c.m_in);
-    m_out = std::move(c.m_out);
+    m_source = std::move(c.m_source);
+    m_target = std::move(c.m_target);
     m_plan = std::move(c.m_plan);
     m_weight_divide = c.m_weight_divide;
     m_weight_in = c.m_weight_in;
@@ -206,6 +206,7 @@ static void hash_combine(size_t &seed, size_t value) {
 static size_t hash_field(const Field &field) {
     size_t result = 0;
     hash_combine(result, std::hash<std::string>()(field.name));
+    hash_combine(result, std::hash<std::string>()(field.source));
     hash_combine(result, std::hash<uint32_t>()((uint32_t) field.type));
     hash_combine(result, std::hash<size_t>()(field.offset));
     hash_combine(result, std::hash<uint32_t>()(field.flags));
@@ -228,15 +229,15 @@ static size_t hash_struct(const Struct &s) {
 }
 
 struct ConverterCacheKey {
-    Struct in;
-    Struct out;
+    Struct source;
+    Struct target;
     bool jit;
     bool dither;
     Type working_precision;
 
     bool operator==(const ConverterCacheKey &other) const {
-        return in == other.in &&
-               out == other.out &&
+        return source == other.source &&
+               target == other.target &&
                jit == other.jit &&
                dither == other.dither &&
                working_precision == other.working_precision;
@@ -246,8 +247,8 @@ struct ConverterCacheKey {
 struct ConverterCacheKeyHash {
     size_t operator()(const ConverterCacheKey &key) const {
         size_t result = 0;
-        hash_combine(result, hash_struct(key.in));
-        hash_combine(result, hash_struct(key.out));
+        hash_combine(result, hash_struct(key.source));
+        hash_combine(result, hash_struct(key.target));
         hash_combine(result, std::hash<bool>()(key.jit));
         hash_combine(result, std::hash<bool>()(key.dither));
         hash_combine(result, std::hash<uint32_t>()((uint32_t) key.working_precision));
@@ -259,17 +260,17 @@ namespace {
 
 class ConverterCache {
 public:
-    const Converter &get(const Struct &in, const Struct &out, bool jit,
+    const Converter &get(const Struct &source, const Struct &target, bool jit,
                          bool dither, Type working_precision) {
         std::lock_guard<std::mutex> lock(m_mutex);
 
-        ConverterCacheKey key { in, out, jit, dither, working_precision };
+        ConverterCacheKey key { source, target, jit, dither, working_precision };
         auto it = m_entries.find(key);
         if (it != m_entries.end())
             return *it->second;
 
         std::unique_ptr<Converter> converter(
-            new Converter(in, out, jit, dither, working_precision));
+            new Converter(source, target, jit, dither, working_precision));
         const Converter &result = *converter;
         m_entries.emplace(std::move(key), std::move(converter));
         return result;
@@ -293,9 +294,9 @@ static ConverterCache &shared_converter_cache() {
 
 } // namespace
 
-const Converter &make_converter(const Struct &in, const Struct &out, bool jit,
+const Converter &make_converter(const Struct &source, const Struct &target, bool jit,
                                 bool dither, Type working_precision) {
-    return shared_converter_cache().get(in, out, jit, dither,
+    return shared_converter_cache().get(source, target, jit, dither,
                                         working_precision);
 }
 
@@ -325,17 +326,17 @@ static size_t find_flagged(const Struct &s, Flag flag, const char *what,
 }
 
 void Converter::create_plan() {
-    m_in.validate();
-    m_out.validate();
+    m_source.validate();
+    m_target.validate();
 
     // ---- Weight fields (at most one per structure) ----
-    size_t weight_in  = find_flagged(m_in,  Flag::Weight, "weight", true),
-           weight_out = find_flagged(m_out, Flag::Weight, "weight", true);
+    size_t weight_in  = find_flagged(m_source,  Flag::Weight, "weight", true),
+           weight_out = find_flagged(m_target, Flag::Weight, "weight", true);
     if (weight_in != None && weight_out != None &&
-        m_in[weight_in].name != m_out[weight_out].name)
+        m_source[weight_in].name != m_target[weight_out].name)
         raise("Converter::create_plan(): the weight fields of the input (\"" +
-              m_in[weight_in].name + "\") and output (\"" +
-              m_out[weight_out].name + "\") data structure have mismatched names!");
+              m_source[weight_in].name + "\") and output (\"" +
+              m_target[weight_out].name + "\") data structure have mismatched names!");
 
     // Converting weighted -> unweighted (input weighted, output not) divides
     // every mapped field by the weight; the backend loads it up front.
@@ -344,20 +345,20 @@ void Converter::create_plan() {
 
     // ---- Alpha fields ----
     bool alpha_in_multiple = false;
-    size_t alpha_in  = find_flagged(m_in,  Flag::Alpha, "alpha", false, &alpha_in_multiple),
-           alpha_out = find_flagged(m_out, Flag::Alpha, "alpha", false);
+    size_t alpha_in  = find_flagged(m_source,  Flag::Alpha, "alpha", false, &alpha_in_multiple),
+           alpha_out = find_flagged(m_target, Flag::Alpha, "alpha", false);
     if (alpha_in != None && alpha_out != None &&
-        m_in[alpha_in].name != m_out[alpha_out].name)
+        m_source[alpha_in].name != m_target[alpha_out].name)
         raise("Converter::create_plan(): the alpha fields of the input (\"" +
-              m_in[alpha_in].name + "\") and output (\"" +
-              m_out[alpha_out].name + "\") data structure have mismatched names!");
+              m_source[alpha_in].name + "\") and output (\"" +
+              m_target[alpha_out].name + "\") data structure have mismatched names!");
     m_alpha_apply = alpha_in != None && alpha_out != None;
     m_alpha_in = m_alpha_apply ? alpha_in : None;
 
     // ---- Per-output-field plan ----
     bool any_premult_conv = false;
-    for (size_t i = 0; i < m_out.size(); ++i) {
-        const Field &f = m_out[i];
+    for (size_t i = 0; i < m_target.size(); ++i) {
+        const Field &f = m_target[i];
 
         // Blended output: resolve each term's source field by name. The result
         // is a linear combination computed in the working precision (see the
@@ -366,35 +367,38 @@ void Converter::create_plan() {
             BlendEntry be;
             be.output = i;
             for (const std::pair<double, std::string> &term : f.blend) {
-                Struct::ConstFieldIterator it = m_in.find(term.second);
-                if (it == m_in.end())
+                Struct::ConstFieldIterator it = m_source.find(term.second);
+                if (it == m_source.end())
                     raise("Converter::create_plan(): the blend source field \"" +
                           term.second + "\" (for output \"" + f.name +
                           "\") could not be found in the input.");
-                be.terms.emplace_back((size_t) (it - m_in.begin()), term.first);
+                be.terms.emplace_back((size_t) (it - m_source.begin()), term.first);
             }
             m_blend.push_back(std::move(be));
             continue;
         }
 
-        Struct::ConstFieldIterator it = m_in.find(f.name);
+        // A non-empty `source` redirects the lookup to a differently-named input
+        // field, expressing a plain renamed copy (the output keeps `name`).
+        const std::string &src_name = f.source.empty() ? f.name : f.source;
+        Struct::ConstFieldIterator it = m_source.find(src_name);
         std::pair<size_t, size_t> entry;
-        if (it != m_in.end())
-            entry = { (size_t) (it - m_in.begin()), i };
-        else if (has_flag(f.flags, Flag::Default))
+        if (it != m_source.end())
+            entry = { (size_t) (it - m_source.begin()), i };
+        else if (f.source.empty() && has_flag(f.flags, Flag::Default))
             entry = { None, i };
         else
             raise("Converter::create_plan(): the output data structure "
-                  "contains a field with name \"" + f.name +
-                  "\" that could not be found in the input, and which lacks a "
-                  "default initialization.");
+                  "contains a field with name \"" + f.name + "\" (reading from "
+                  "input field \"" + src_name + "\") that could not be found in "
+                  "the input, and which lacks a default initialization.");
 
         m_plan.push_back(entry);
 
         // Only needed to police the multiple-alpha rule below, so skip the work
         // unless there actually is more than one alpha channel to disambiguate.
         if (m_alpha_apply && alpha_in_multiple) {
-            Transfer t = make_transfer(m_in, m_out, entry, m_working,
+            Transfer t = make_transfer(m_source, m_target, entry, m_working,
                                        m_weight_divide, true);
             any_premult_conv |= t.alpha_premul || t.alpha_unpremul;
         }
@@ -429,7 +433,7 @@ bool Converter::convert_fallback(const uint8_t *in, uint8_t *out, size_t width, 
 template <typename Float>
 bool Converter::convert_fallback_impl(const uint8_t *in_base, uint8_t *out_base,
                                       size_t width, size_t height) const {
-    size_t in_size = m_in.nbytes(), out_size = m_out.nbytes();
+    size_t in_size = m_source.nbytes(), out_size = m_target.nbytes();
 
     // Resolve every plan entry into its shared Transfer recipe once, up front:
     // the recipe is identical for every record, so there is no need to rebuild
@@ -437,7 +441,7 @@ bool Converter::convert_fallback_impl(const uint8_t *in_base, uint8_t *out_base,
     std::vector<Transfer> transfers;
     transfers.reserve(m_plan.size());
     for (const std::pair<size_t, size_t> &entry : m_plan)
-        transfers.push_back(make_transfer(m_in, m_out, entry, m_working,
+        transfers.push_back(make_transfer(m_source, m_target, entry, m_working,
                                            m_weight_divide, m_alpha_apply));
 
     Temp temp;
@@ -460,7 +464,7 @@ bool Converter::convert_fallback_impl(const uint8_t *in_base, uint8_t *out_base,
         Temp tmp;
         memcpy(&tmp.value, in + fi.offset, type_size(fi.type));
         tmp.type = fi.type;
-        if (m_in.byte_order() != native_byte_order())
+        if (m_source.byte_order() != native_byte_order())
             bswap((uint8_t *) &tmp.value, type_size(tmp.type));
         convert_scalar(tmp, m_working, has_flag(fi.flags, Flag::Normalized));
         Float v;
@@ -483,7 +487,7 @@ bool Converter::convert_fallback_impl(const uint8_t *in_base, uint8_t *out_base,
                 dither = dither_matrix256[(y % 256) * 256 + (x % 256)];
             convert_scalar(temp, fo.type, has_flag(fo.flags, Flag::Normalized), dither);
         }
-        if (m_out.byte_order() != native_byte_order())
+        if (m_target.byte_order() != native_byte_order())
             bswap((uint8_t *) &temp.value, type_size(fo.type));
         memcpy(out + fo.offset, &temp.value, type_size(fo.type));
     };
@@ -494,13 +498,13 @@ bool Converter::convert_fallback_impl(const uint8_t *in_base, uint8_t *out_base,
             // against its expected raw value, independent of the conversion
             // plan, so input-only check fields are covered. A mismatch fails the
             // whole conversion.
-            for (size_t i = 0; i < m_in.size(); ++i) {
-                const Field &fi = m_in[i];
+            for (size_t i = 0; i < m_source.size(); ++i) {
+                const Field &fi = m_source[i];
                 if (!has_flag(fi.flags, Flag::Check))
                     continue;
                 uint64_t raw = 0;
                 memcpy(&raw, in + fi.offset, type_size(fi.type));
-                if (m_in.byte_order() != native_byte_order())
+                if (m_source.byte_order() != native_byte_order())
                     bswap((uint8_t *) &raw, type_size(fi.type));
                 uint64_t expected = encode_value(fi);
                 if (memcmp(&raw, &expected, type_size(fi.type)) != 0)
@@ -511,11 +515,11 @@ bool Converter::convert_fallback_impl(const uint8_t *in_base, uint8_t *out_base,
             // reciprocal (1 if zero; NaN propagates) and the alpha / inverse alpha.
             Float weight_recip = 1, alpha = 1, inv_alpha = 1;
             if (m_weight_divide) {
-                Float w = load_linearized(m_in[m_weight_in]);
+                Float w = load_linearized(m_source[m_weight_in]);
                 weight_recip = w == Float(0) ? Float(1) : Float(1) / w;
             }
             if (m_alpha_apply) {
-                alpha = load_linearized(m_in[m_alpha_in]);
+                alpha = load_linearized(m_source[m_alpha_in]);
                 inv_alpha = alpha == Float(0) ? Float(0) : Float(1) / alpha;
             }
 
@@ -525,7 +529,7 @@ bool Converter::convert_fallback_impl(const uint8_t *in_base, uint8_t *out_base,
                     memcpy(&temp.value, in + fi.offset, type_size(fi.type));
                     temp.type = fi.type;
 
-                    if (m_in.byte_order() != native_byte_order())
+                    if (m_source.byte_order() != native_byte_order())
                         bswap((uint8_t *) &temp.value, type_size(temp.type));
 
                     if (t.needs_conversion)
@@ -558,10 +562,10 @@ bool Converter::convert_fallback_impl(const uint8_t *in_base, uint8_t *out_base,
             for (const BlendEntry &be : m_blend) {
                 Float accum = 0;
                 for (const std::pair<size_t, double> &term : be.terms)
-                    accum += (Float) term.second * load_linearized(m_in[term.first]);
+                    accum += (Float) term.second * load_linearized(m_source[term.first]);
                 if (m_weight_divide)
                     accum *= weight_recip;
-                const Field &fo = m_out[be.output];
+                const Field &fo = m_target[be.output];
                 temp.type = m_working;
                 write(accum);
                 finish_output(fo, has_flag(fo.flags, Flag::Gamma));

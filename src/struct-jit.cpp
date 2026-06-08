@@ -47,6 +47,11 @@ static void validate_field_definition(const Field &f) {
         raise("Struct::validate(): field \"" + f.name +
               "\" specifies mutually exclusive 'Check' and 'Default' flags!");
 
+    if (!f.source.empty() && !f.blend.empty())
+        raise("Struct::validate(): field \"" + f.name +
+              "\" specifies both a 'source' (renamed copy) and a 'blend' "
+              "(linear combination), which are mutually exclusive!");
+
     (void) field_end(f);
 }
 
@@ -99,7 +104,11 @@ Struct &Struct::append(const std::string &name, Type type, uint32_t flags, doubl
     if (type == Type::Invalid)
         raise("Struct::append(): an invalid field type was specified!");
 
-    Field f { name, type, 0, flags, value, {} };
+    Field f;
+    f.name  = name;
+    f.type  = type;
+    f.flags = flags;
+    f.value = value;
     validate_field_definition(f);
 
     if (contains(name))
@@ -287,6 +296,7 @@ std::pair<double, double> type_range(Type type) {
 
 bool operator==(const Field &f1, const Field &f2) {
     return f1.name == f2.name &&
+           f1.source == f2.source &&
            f1.type == f2.type &&
            f1.offset == f2.offset &&
            f1.flags == f2.flags &&

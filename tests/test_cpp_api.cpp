@@ -47,7 +47,7 @@ int main() {
     check.name = "v";
     check.type = Type::UInt8;
     check.flags = +Flag::Check;
-    check.value = 0x010000000000000aull;
+    check.value = 10;
 
     Struct checked_in;
     checked_in.append(check);

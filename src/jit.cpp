@@ -636,8 +636,8 @@ void Converter::create_kernel() {
     put(impl::aligned, (uint32_t) (offset))
 #endif
 
-    bool bswap_in = m_in.byte_order() != native_byte_order();
-    bool bswap_out = m_out.byte_order() != native_byte_order();
+    bool bswap_in = m_source.byte_order() != native_byte_order();
+    bool bswap_out = m_target.byte_order() != native_byte_order();
 
     auto emit_load = [&](const Field &field) {
         switch (field.type) {
@@ -922,27 +922,27 @@ void Converter::create_kernel() {
     // Up front (per record): verify every Check-flagged input field before any
     // value is processed, independent of the conversion plan, so input-only
     // check fields are covered too.
-    for (size_t i = 0; i < m_in.size(); ++i) {
-        if (has_flag(m_in[i].flags, Flag::Check))
-            emit_check(m_in[i]);
+    for (size_t i = 0; i < m_source.size(); ++i) {
+        if (has_flag(m_source[i].flags, Flag::Check))
+            emit_check(m_source[i]);
     }
 
     // Preamble (per record): linearize the source weight and stash its
     // reciprocal in the reserved register (xmm2 / v2), then likewise compute the
     // alpha and inverse alpha (xmm6/xmm7 / v16/v17). Both survive the loop body.
     if (m_weight_divide) {
-        emit_linearize_source(m_in[m_weight_in]);
+        emit_linearize_source(m_source[m_weight_in]);
         put_fp(impl::weight_recip_f4, impl::weight_recip_f8);
     }
     if (m_alpha_apply) {
-        emit_linearize_source(m_in[m_alpha_in]);
+        emit_linearize_source(m_source[m_alpha_in]);
         put_fp(impl::alpha_recip_f4, impl::alpha_recip_f8);
     }
 
     for (const auto &entry : m_plan) {
         // The planner strips the conversion problem down to one transfer at a
         // time; the backend only has to lower that scalar recipe into snippets.
-        Transfer t = make_transfer(m_in, m_out, entry, m_working,
+        Transfer t = make_transfer(m_source, m_target, entry, m_working,
                                    m_weight_divide, m_alpha_apply);
 
         if (!t.input) {
@@ -965,9 +965,9 @@ void Converter::create_kernel() {
     // register, divide by the weight if requested, then store. Blend fields skip
     // alpha (un)premultiplication (matching the fallback).
     for (const BlendEntry &be : m_blend) {
-        const Field &fo = m_out[be.output];
+        const Field &fo = m_target[be.output];
         for (size_t i = 0; i < be.terms.size(); ++i) {
-            emit_linearize_source(m_in[be.terms[i].first]);
+            emit_linearize_source(m_source[be.terms[i].first]);
             emit_scale(m_working, be.terms[i].second);
             if (i == 0)
                 put_fp(impl::blend_init_f4, impl::blend_init_f8);
@@ -980,8 +980,8 @@ void Converter::create_kernel() {
         emit_store_working(fo, has_flag(fo.flags, Flag::Gamma));
     }
 
-    put(impl::main_inc_in, (uint32_t) m_in.nbytes());
-    put(impl::main_inc_out, (uint32_t) m_out.nbytes());
+    put(impl::main_inc_in, (uint32_t) m_source.nbytes());
+    put(impl::main_inc_out, (uint32_t) m_target.nbytes());
     put(impl::main_suffix_inner, (uint32_t) loop_body);
     put(impl::main_suffix_outer, (uint32_t) main_start_offset);
     put(impl::main_postfix);

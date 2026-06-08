@@ -74,7 +74,7 @@ static const char *__doc_struct_jit_Converter_create_plan =
 R"doc(Analyze the input/output layouts and build m_plan, the per-field
 transfer schedule shared by the JIT and software fallback.)doc";
 
-static const char *__doc_struct_jit_Converter_in = R"doc()doc";
+static const char *__doc_struct_jit_Converter_source = R"doc()doc";
 
 static const char *__doc_struct_jit_Converter_kernel =
 R"doc(Return the generated kernel machine code (e.g. for disassembly), or
@@ -121,7 +121,7 @@ static const char *__doc_struct_jit_Converter_operator_assign = R"doc()doc";
 
 static const char *__doc_struct_jit_Converter_operator_assign_2 = R"doc()doc";
 
-static const char *__doc_struct_jit_Converter_out = R"doc()doc";
+static const char *__doc_struct_jit_Converter_target = R"doc()doc";
 
 static const char *__doc_struct_jit_Converter_release_kernel = R"doc(Release the executable memory backing m_kernel.)doc";
 
