@@ -82,6 +82,9 @@ target_include_directories(struct-jit
   ${CMAKE_CURRENT_SOURCE_DIR}/ext/nanobind/ext/robin_map/include)
 
 if (MSVC)
+  # C4127: conditional expression is constant (robin_map's pre-'if constexpr' code)
+  target_compile_options(struct-jit PRIVATE /wd4127)
+
   foreach (cfg RELEASE DEBUG RELWITHDEBINFO MINSIZEREL)
     set_target_properties(struct-jit PROPERTIES
       RUNTIME_OUTPUT_DIRECTORY_${cfg} ${CMAKE_BINARY_DIR}/struct_jit
