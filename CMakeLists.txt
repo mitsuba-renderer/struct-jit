@@ -83,7 +83,8 @@ target_include_directories(struct-jit
 
 if (MSVC)
   # C4127: conditional expression is constant (robin_map's pre-'if constexpr' code)
-  target_compile_options(struct-jit PRIVATE /wd4127)
+  # Scope to C++ only; MASM (ml64) rejects cl.exe flags with warning A4018.
+  target_compile_options(struct-jit PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/wd4127>)
 
   foreach (cfg RELEASE DEBUG RELWITHDEBINFO MINSIZEREL)
     set_target_properties(struct-jit PROPERTIES
