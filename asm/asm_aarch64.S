@@ -11,6 +11,7 @@
 //   x6      integer value in flight
 //   v0      SIMD value in flight
 //   v2      weight reciprocal, live across the whole loop body (weight division)
+//   v18     per-record dither value, live across the loop body (when dithering)
 //
 // The kernel is a leaf function using only AAPCS caller-saved registers, so it
 // preserves nothing for its caller.
@@ -681,27 +682,33 @@ SNIPPET(gamma_encode_f8)                 // linear -> sRGB (n = 11, y = sqrt(x))
 SNIPPET_END(gamma_encode_f8)
 
 // --------------------------------------------------------------------------
-// Ordered dithering: add dither_matrix256[(y%256)*256 + (x%256)] to the working
-// value before quantization. The table base is loaded from the literal pool
-// (ldr-literal sentinel, patched by the codegen). x = x5, y = x4; w9/w10/x10 are
-// scratch GPRs unused by the loop.
+// Ordered dithering: add dither_matrix256[(y%256)*256 + (x%256)] before
+// quantization. The offset depends only on the pixel, so dither_load computes it
+// once per record into v18 (held across the loop body) and dither_add folds it
+// into each store. Table base: ldr-literal sentinel patched by the codegen.
 // --------------------------------------------------------------------------
 
-SNIPPET(dither_f4)
+SNIPPET(dither_load_f4)
     and     w9, w5, #0xff               // x % 256
     and     w10, w4, #0xff              // y % 256
     orr     w9, w9, w10, lsl #8         // idx = (y%256)*256 + (x%256)
     .inst   0x58FFFFEA                  // ldr x10, [pc + sentinel]  (table base)
-    ldr     s5, [x10, w9, uxtw #2]
-    fadd    s0, s0, s5
-SNIPPET_END(dither_f4)
+    ldr     s18, [x10, w9, uxtw #2]
+SNIPPET_END(dither_load_f4)
 
-SNIPPET(dither_f8)
+SNIPPET(dither_load_f8)
     and     w9, w5, #0xff
     and     w10, w4, #0xff
     orr     w9, w9, w10, lsl #8
     .inst   0x58FFFFEA                  // ldr x10, [pc + sentinel]
-    ldr     s5, [x10, w9, uxtw #2]
-    fcvt    d5, s5                      // table value is f32; widen to f64
-    fadd    d0, d0, d5
-SNIPPET_END(dither_f8)
+    ldr     s18, [x10, w9, uxtw #2]
+    fcvt    d18, s18                    // table value is f32; widen to f64
+SNIPPET_END(dither_load_f8)
+
+SNIPPET(dither_add_f4)
+    fadd    s0, s0, s18
+SNIPPET_END(dither_add_f4)
+
+SNIPPET(dither_add_f8)
+    fadd    d0, d0, d18
+SNIPPET_END(dither_add_f8)

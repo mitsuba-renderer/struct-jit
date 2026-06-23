@@ -197,14 +197,19 @@ PUBLIC gamma_decode_f8
 PUBLIC gamma_decode_f8_end
 PUBLIC gamma_encode_f8
 PUBLIC gamma_encode_f8_end
-PUBLIC dither_f4
-PUBLIC dither_f4_end
-PUBLIC dither_f8
-PUBLIC dither_f8_end
+PUBLIC dither_load_f4
+PUBLIC dither_load_f4_end
+PUBLIC dither_load_f8
+PUBLIC dither_load_f8_end
+PUBLIC dither_add_f4
+PUBLIC dither_add_f4_end
+PUBLIC dither_add_f8
+PUBLIC dither_add_f8_end
 
 main_prefix LABEL BYTE
-    DB 053h, 048h, 083h, 0ECh, 020h, 0C5h, 0F8h, 029h, 034h, 024h, 0C5h, 0F8h
-    DB 029h, 07Ch, 024h, 010h, 04Dh, 031h, 0D2h
+    DB 053h, 048h, 083h, 0ECh, 030h, 0C5h, 0F8h, 029h, 034h, 024h, 0C5h, 0F8h
+    DB 029h, 07Ch, 024h, 010h, 0C5h, 078h, 029h, 044h, 024h, 020h, 04Dh, 031h
+    DB 0D2h
 main_prefix_end LABEL BYTE
 main_start LABEL BYTE
     DB 04Dh, 031h, 0DBh
@@ -222,12 +227,14 @@ main_suffix_outer LABEL BYTE
     DB 049h, 0FFh, 0C2h, 04Dh, 039h, 0CAh, 00Fh, 085h, 078h, 056h, 034h, 012h
 main_suffix_outer_end LABEL BYTE
 main_postfix LABEL BYTE
-    DB 0C5h, 0F8h, 028h, 034h, 024h, 0C5h, 0F8h, 028h, 07Ch, 024h, 010h, 048h
-    DB 083h, 0C4h, 020h, 05Bh, 0B8h, 001h, 000h, 000h, 000h, 0C3h
+    DB 0C5h, 0F8h, 028h, 034h, 024h, 0C5h, 0F8h, 028h, 07Ch, 024h, 010h, 0C5h
+    DB 078h, 028h, 044h, 024h, 020h, 048h, 083h, 0C4h, 030h, 05Bh, 0B8h, 001h
+    DB 000h, 000h, 000h, 0C3h
 main_postfix_end LABEL BYTE
 fail_postfix LABEL BYTE
-    DB 0C5h, 0F8h, 028h, 034h, 024h, 0C5h, 0F8h, 028h, 07Ch, 024h, 010h, 048h
-    DB 083h, 0C4h, 020h, 05Bh, 031h, 0C0h, 0C3h
+    DB 0C5h, 0F8h, 028h, 034h, 024h, 0C5h, 0F8h, 028h, 07Ch, 024h, 010h, 0C5h
+    DB 078h, 028h, 044h, 024h, 020h, 048h, 083h, 0C4h, 030h, 05Bh, 031h, 0C0h
+    DB 0C3h
 fail_postfix_end LABEL BYTE
 load_u1 LABEL BYTE
     DB 08Ah, 081h, 078h, 056h, 034h, 012h
@@ -543,18 +550,24 @@ gamma_encode_f8 LABEL BYTE
     DB 0A9h, 05Bh, 060h, 0C4h, 0E2h, 0F1h, 0A9h, 0A3h, 0B8h, 000h, 000h, 000h
     DB 0C5h, 0E3h, 05Eh, 0DCh, 0C5h, 0FBh, 059h, 0C3h
 gamma_encode_f8_end LABEL BYTE
-dither_f4 LABEL BYTE
+dither_load_f4 LABEL BYTE
     DB 04Ch, 089h, 0D8h, 025h, 0FFh, 000h, 000h, 000h, 04Ch, 089h, 0D3h, 048h
     DB 081h, 0E3h, 0FFh, 000h, 000h, 000h, 048h, 0C1h, 0E3h, 008h, 048h, 009h
     DB 0D8h, 048h, 0BBh, 0EFh, 0CDh, 0ABh, 089h, 067h, 045h, 023h, 001h, 0C5h
-    DB 0FAh, 058h, 004h, 083h
-dither_f4_end LABEL BYTE
-dither_f8 LABEL BYTE
+    DB 07Ah, 010h, 004h, 083h
+dither_load_f4_end LABEL BYTE
+dither_load_f8 LABEL BYTE
     DB 04Ch, 089h, 0D8h, 025h, 0FFh, 000h, 000h, 000h, 04Ch, 089h, 0D3h, 048h
     DB 081h, 0E3h, 0FFh, 000h, 000h, 000h, 048h, 0C1h, 0E3h, 008h, 048h, 009h
     DB 0D8h, 048h, 0BBh, 0EFh, 0CDh, 0ABh, 089h, 067h, 045h, 023h, 001h, 0C5h
-    DB 0D2h, 05Ah, 02Ch, 083h, 0C5h, 0FBh, 058h, 0C5h
-dither_f8_end LABEL BYTE
+    DB 03Ah, 05Ah, 004h, 083h
+dither_load_f8_end LABEL BYTE
+dither_add_f4 LABEL BYTE
+    DB 0C4h, 0C1h, 07Ah, 058h, 0C0h
+dither_add_f4_end LABEL BYTE
+dither_add_f8 LABEL BYTE
+    DB 0C4h, 0C1h, 07Bh, 058h, 0C0h
+dither_add_f8_end LABEL BYTE
 
 _TEXT ENDS
 END

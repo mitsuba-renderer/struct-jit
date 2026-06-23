@@ -10,11 +10,12 @@
 #   rax                          integer value in flight
 #   xmm0                         SIMD value in flight
 #   xmm2                         weight reciprocal, live across the loop body
+#   xmm8                         per-record dither value, live across the loop body
 #
 # Mappings: SysV  in,out,width,height,y,x,tmp = rdi,rsi,rdx,rcx,r8,r9,r10;
-#           Win   = rcx,rdx,r8,r9,r10,r11,rbx (rbx is callee-saved, so cc_prefix/
-#           cc_postfix push/pop it). The kernel otherwise touches only
-#           caller-saved registers under both ABIs, and makes no calls.
+#           Win   = rcx,rdx,r8,r9,r10,r11,rbx. On Win64 rbx, xmm6/xmm7 (alpha)
+#           and xmm8 (dither) are callee-saved and spilled by cc_prefix/cc_postfix;
+#           under SysV all are caller-saved. The kernel makes no calls.
 
 .intel_syntax noprefix
 .text
@@ -212,10 +213,14 @@
 .hidden gamma_decode_f8_end
 .hidden gamma_encode_f8
 .hidden gamma_encode_f8_end
-.hidden dither_f4
-.hidden dither_f4_end
-.hidden dither_f8
-.hidden dither_f8_end
+.hidden dither_load_f4
+.hidden dither_load_f4_end
+.hidden dither_load_f8
+.hidden dither_load_f8_end
+.hidden dither_add_f4
+.hidden dither_add_f4_end
+.hidden dither_add_f8
+.hidden dither_add_f8_end
 #endif
 
 .globl main_prefix
@@ -417,10 +422,14 @@
 .globl gamma_encode_f8
 .globl gamma_encode_f8_end
 
-.globl dither_f4
-.globl dither_f4_end
-.globl dither_f8
-.globl dither_f8_end
+.globl dither_load_f4
+.globl dither_load_f4_end
+.globl dither_load_f8
+.globl dither_load_f8_end
+.globl dither_add_f4
+.globl dither_add_f4_end
+.globl dither_add_f8
+.globl dither_add_f8_end
 
 # void convert(size_t height, size_t width, const void *in, void *out) {
 #     for (size_t y = 0; y < height; ++y) {
@@ -1030,12 +1039,13 @@ gamma_encode_f8_end:
 
 # ====> Ordered dithering
 #
-# Add dither_matrix256[(y%256)*256 + (x%256)] to the working value before
-# quantization. y = r8, x = r9; rax/r11/r10 are scratch (rcx is `height`, so it
-# must NOT be touched). The table base is baked into the movabs immediate, which
-# the codegen patches by replacing the sentinel.
+# Add dither_matrix256[(y%256)*256 + (x%256)] before quantization. The offset
+# depends only on the pixel, so dither_load computes it once per record into xmm8
+# (held across the loop body; callee-saved on Win64, hence spilled by cc_prefix)
+# and dither_add folds it into each store. rcx is `height`, so it must NOT be
+# touched. Table base: movabs immediate patched by the codegen.
 
-dither_f4:
+dither_load_f4:
     mov rax, x
     and eax, 0xff                        # x % 256
     mov tmp, y
@@ -1043,10 +1053,10 @@ dither_f4:
     shl tmp, 8
     or rax, tmp                          # idx = (y%256)*256 + (x%256)
     movabs tmp, 0x0123456789ABCDEF       # table base (patched)
-    vaddss xmm0, xmm0, dword ptr [tmp + rax*4]
-dither_f4_end:
+    vmovss xmm8, dword ptr [tmp + rax*4]
+dither_load_f4_end:
 
-dither_f8:
+dither_load_f8:
     mov rax, x
     and eax, 0xff
     mov tmp, y
@@ -1054,6 +1064,13 @@ dither_f8:
     shl tmp, 8
     or rax, tmp
     movabs tmp, 0x0123456789ABCDEF
-    vcvtss2sd xmm5, xmm5, dword ptr [tmp + rax*4]   # table value f32 -> f64
-    vaddsd xmm0, xmm0, xmm5
-dither_f8_end:
+    vcvtss2sd xmm8, xmm8, dword ptr [tmp + rax*4]   # table value f32 -> f64
+dither_load_f8_end:
+
+dither_add_f4:
+    vaddss xmm0, xmm0, xmm8
+dither_add_f4_end:
+
+dither_add_f8:
+    vaddsd xmm0, xmm0, xmm8
+dither_add_f8_end:

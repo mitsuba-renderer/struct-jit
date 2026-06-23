@@ -592,11 +592,11 @@ void Converter::create_kernel() {
                      working, b.second);
     };
 
-    // Emit a dither-add before a float -> int quantization. The table base is
-    // embedded per-arch: aarch64 loads it from the literal pool, x64 bakes it
-    // into a movabs immediate.
-    auto emit_dither = [&](Type working) {
-        impl which = working == Type::Float32 ? impl::dither_f4 : impl::dither_f8;
+    // Per-record dither value into the reserved register (v18 / xmm8); it depends
+    // only on the pixel, so all of a record's float -> int stores share it.
+    auto emit_dither_load = [&](Type working) {
+        impl which = working == Type::Float32 ? impl::dither_load_f4
+                                              : impl::dither_load_f8;
         SnippetSpan snippet = get_snippet(which);
         size_t kernel_offset = kernel.size();
         kernel.insert(kernel.end(), snippet.data, snippet.data + snippet.size);
@@ -817,6 +817,10 @@ void Converter::create_kernel() {
         }
     };
 
+    // First dithered store materializes the per-record value; later ones are
+    // straight-line after it, so they just add the register.
+    bool dither_loaded = false;
+
     // Lower a working-precision value (already in v0 / xmm0) into output field
     // \c fo: optional sRGB encode, then either the float -> int path (rescale,
     // dither, round, clamp, convert) or a float precision adjust, then store.
@@ -830,8 +834,14 @@ void Converter::create_kernel() {
         if (type_is_signed_int(fo.type) || type_is_unsigned_int(fo.type)) {
             if (has_flag(fo.flags, Flag::Normalized))
                 emit_scale(m_working, type_range(fo.type).second);
-            if (m_dither)
-                emit_dither(m_working);
+            if (m_dither) {
+                if (!dither_loaded) {
+                    emit_dither_load(m_working);
+                    dither_loaded = true;
+                }
+                put(m_working == Type::Float32 ? impl::dither_add_f4
+                                               : impl::dither_add_f8);
+            }
             put(round_cvt(m_working));
             emit_clamp(m_working, fo.type);
             put(float_to_int_cvt(m_working, fo.type));

@@ -122,8 +122,10 @@ extern "C" {
     SJIT_SNIPPET_DECL(gamma_encode_f4)
     SJIT_SNIPPET_DECL(gamma_decode_f8)
     SJIT_SNIPPET_DECL(gamma_encode_f8)
-    SJIT_SNIPPET_DECL(dither_f4)
-    SJIT_SNIPPET_DECL(dither_f8)
+    SJIT_SNIPPET_DECL(dither_load_f4)
+    SJIT_SNIPPET_DECL(dither_load_f8)
+    SJIT_SNIPPET_DECL(dither_add_f4)
+    SJIT_SNIPPET_DECL(dither_add_f8)
 
     #undef SJIT_SNIPPET_DECL
 }
@@ -190,7 +192,8 @@ enum class impl : uint32_t {
 
     gamma_decode_f4, gamma_encode_f4,
     gamma_decode_f8, gamma_encode_f8,
-    dither_f4, dither_f8,
+    dither_load_f4, dither_load_f8,
+    dither_add_f4, dither_add_f8,
 
     last
 };
@@ -264,7 +267,8 @@ inline SnippetSpan get_snippet(impl i) {
 
         CASE(gamma_decode_f4) CASE(gamma_encode_f4)
         CASE(gamma_decode_f8) CASE(gamma_encode_f8)
-        CASE(dither_f4) CASE(dither_f8)
+        CASE(dither_load_f4) CASE(dither_load_f8)
+        CASE(dither_add_f4) CASE(dither_add_f8)
 
         default:
             return SnippetSpan{ nullptr, 0 };
