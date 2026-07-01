@@ -3,6 +3,7 @@
 #include "dither.h"
 #include <cassert>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <utility>
 #include <vector>
