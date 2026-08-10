@@ -74,8 +74,6 @@ static const char *__doc_struct_jit_Converter_create_plan =
 R"doc(Analyze the input/output layouts and build m_plan, the per-field
 transfer schedule shared by the JIT and software fallback.)doc";
 
-static const char *__doc_struct_jit_Converter_source = R"doc()doc";
-
 static const char *__doc_struct_jit_Converter_kernel =
 R"doc(Return the generated kernel machine code (e.g. for disassembly), or
 {nullptr, 0} when no kernel was compiled)doc";
@@ -92,18 +90,18 @@ R"doc(Output fields computed as a linear combination of inputs
 
 static const char *__doc_struct_jit_Converter_m_dither = R"doc(Apply ordered dithering when quantizing float -> int (2D images).)doc";
 
-static const char *__doc_struct_jit_Converter_m_in = R"doc()doc";
-
 static const char *__doc_struct_jit_Converter_m_kernel = R"doc(Compiled kernel and its size in bytes (null when using the fallback).)doc";
 
 static const char *__doc_struct_jit_Converter_m_kernel_size = R"doc()doc";
-
-static const char *__doc_struct_jit_Converter_m_out = R"doc()doc";
 
 static const char *__doc_struct_jit_Converter_m_plan =
 R"doc(Ordered transfer schedule produced by create_plan(). Each entry is a
 (input field index, output field index) pair; None in the input slot
 marks a missing input (substitute the output default).)doc";
+
+static const char *__doc_struct_jit_Converter_m_source = R"doc()doc";
+
+static const char *__doc_struct_jit_Converter_m_target = R"doc()doc";
 
 static const char *__doc_struct_jit_Converter_m_weight_divide =
 R"doc(Weighted -> unweighted: divide every mapped field by the source weight
@@ -121,9 +119,11 @@ static const char *__doc_struct_jit_Converter_operator_assign = R"doc()doc";
 
 static const char *__doc_struct_jit_Converter_operator_assign_2 = R"doc()doc";
 
-static const char *__doc_struct_jit_Converter_target = R"doc()doc";
-
 static const char *__doc_struct_jit_Converter_release_kernel = R"doc(Release the executable memory backing m_kernel.)doc";
+
+static const char *__doc_struct_jit_Converter_source = R"doc()doc";
+
+static const char *__doc_struct_jit_Converter_target = R"doc()doc";
 
 static const char *__doc_struct_jit_Field = R"doc(Specifies a single field of a Struct instance)doc";
 
@@ -131,7 +131,7 @@ static const char *__doc_struct_jit_Field_blend =
 R"doc(Blend specification: when non-empty, the field's value is a linear
 combination of other (named) input fields rather than a direct copy.
 
-Each entry is a \c (weight, source field name) pair; the output is
+Each entry is a ``(weight, source field name)`` pair; the output is
 ``sum(weight_i * linearize(source_i))``, evaluated in the converter's
 working precision.)doc";
 
@@ -141,9 +141,24 @@ static const char *__doc_struct_jit_Field_name = R"doc(Name of the field)doc";
 
 static const char *__doc_struct_jit_Field_offset = R"doc(Offset within the ``Struct`` (in bytes))doc";
 
+static const char *__doc_struct_jit_Field_source =
+R"doc(Optional input field name for a plain renamed copy (target only).
+
+When non-empty, the converter reads this output from the input field
+named ``source`` instead of one matching name, with the usual type,
+gamma, and alpha handling. Mutually exclusive with blend. When left
+empty, the converter falls back to looking up an input field matching
+name.)doc";
+
 static const char *__doc_struct_jit_Field_type = R"doc()doc";
 
-static const char *__doc_struct_jit_Field_value = R"doc(Default value (reinterpreted according to type))doc";
+static const char *__doc_struct_jit_Field_value =
+R"doc(Logical value associated with the field, in double precision.
+
+Used as the substituted default for a Flag::Default field, or the
+expected value for a Flag::Check field. It is interpreted like a
+regular field value, i.e. subject to the field's normalization and
+gamma encoding.)doc";
 
 static const char *__doc_struct_jit_Flag = R"doc(Optional flags that can be applied to each field)doc";
 
@@ -333,7 +348,31 @@ static const char *__doc_struct_jit_operator_ne = R"doc()doc";
 
 static const char *__doc_struct_jit_operator_ne_2 = R"doc()doc";
 
+static const char *__doc_struct_jit_type_id = R"doc()doc";
+
+static const char *__doc_struct_jit_type_id_2 = R"doc()doc";
+
+static const char *__doc_struct_jit_type_id_3 = R"doc()doc";
+
+static const char *__doc_struct_jit_type_id_4 = R"doc()doc";
+
+static const char *__doc_struct_jit_type_id_5 = R"doc()doc";
+
+static const char *__doc_struct_jit_type_id_6 = R"doc()doc";
+
+static const char *__doc_struct_jit_type_id_7 = R"doc()doc";
+
+static const char *__doc_struct_jit_type_id_8 = R"doc()doc";
+
+static const char *__doc_struct_jit_type_id_9 = R"doc()doc";
+
+static const char *__doc_struct_jit_type_id_10 = R"doc()doc";
+
+static const char *__doc_struct_jit_type_id_11 = R"doc()doc";
+
 static const char *__doc_struct_jit_type_is_float = R"doc(Check whether the given type is a floating point type)doc";
+
+static const char *__doc_struct_jit_type_is_integer = R"doc(Check whether the given type is an integer (signed or unsigned))doc";
 
 static const char *__doc_struct_jit_type_is_signed = R"doc(Check whether the given type is a signed type)doc";
 

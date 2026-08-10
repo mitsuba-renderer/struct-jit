@@ -203,7 +203,7 @@ struct SJIT_EXPORT Field {
      * \brief Blend specification: when non-empty, the field's value is a linear
      * combination of other (named) input fields rather than a direct copy.
      *
-     * Each entry is a \c (weight, source field name) pair; the output is
+     * Each entry is a <tt>(weight, source field name)</tt> pair; the output is
      * <tt>sum(weight_i * linearize(source_i))</tt>, evaluated in the converter's
      * working precision.
      */
